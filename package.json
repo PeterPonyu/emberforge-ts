@@ -1,0 +1,14 @@
+{
+  "name": "emberforge-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/apps/ember-cli/src/main.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
