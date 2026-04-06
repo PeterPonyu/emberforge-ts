@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.js.map
+.cache/
+.vscode/
+.idea/
+*.swp
+*.tsbuildinfo
