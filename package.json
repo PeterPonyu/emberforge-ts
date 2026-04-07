@@ -9,6 +9,7 @@
     "start": "node dist/apps/ember-cli/src/main.js"
   },
   "devDependencies": {
+    "@types/node": "^25.5.2",
     "typescript": "^5.8.3"
   }
 }

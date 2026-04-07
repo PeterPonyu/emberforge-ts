@@ -6,3 +6,5 @@ dist/
 .idea/
 *.swp
 *.tsbuildinfo
+.omc/
+run-output.txt

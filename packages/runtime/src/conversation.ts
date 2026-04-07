@@ -17,7 +17,7 @@ export class ConversationRuntime {
     private readonly telemetry: TelemetrySink,
   ) {}
 
-  runTurn(input: string): string {
+  async runTurn(input: string): Promise<string> {
     this.telemetry.record({ name: "turn_started", details: input });
 
     let output: string;
@@ -26,10 +26,10 @@ export class ConversationRuntime {
       output = this.toolExecutor.execute("bash", payload);
       this.telemetry.record({ name: "tool_executed", details: output });
     } else {
-      output = this.provider.sendMessage({
+      output = (await this.provider.sendMessage({
         model: DEFAULT_MODEL,
         prompt: input,
-      }).text;
+      })).text;
       this.telemetry.record({ name: "provider_completed", details: output });
     }
 

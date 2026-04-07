@@ -34,7 +34,7 @@ export class ControlSequenceEngine {
     this.lifecycle.transition("ready");
   }
 
-  handle(input: string): SequenceRecord {
+  async handle(input: string): Promise<SequenceRecord> {
     if (this.lifecycle.current() === "created") {
       this.bootstrap();
     }
@@ -54,7 +54,7 @@ export class ControlSequenceEngine {
     context.route = decision.route;
 
     mark("executing");
-    const output = this.executeDecision(decision);
+    const output = await this.executeDecision(decision);
 
     mark("persisting");
     const record: SequenceRecord = {
@@ -95,7 +95,7 @@ export class ControlSequenceEngine {
     return this.lifecycle.current();
   }
 
-  private executeDecision(decision: DispatchDecision): string {
+  private async executeDecision(decision: DispatchDecision): Promise<string> {
     switch (decision.route) {
       case "command":
         return this.renderCommandOutput(decision.commandName ?? "unknown");

@@ -1,7 +1,8 @@
+import { OllamaProvider } from "../../../packages/api/src/index.js";
 import { DEFAULT_STARTER_SYSTEM_CONFIG, StarterSystemApplication } from "../../../packages/system/src/index.js";
 
-const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-const [commandReply, firstReply, secondReply] = app.runDemo();
+const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+const [commandReply, firstReply, secondReply] = await app.runDemo();
 app.shutdown();
 const report = app.report();
 

@@ -1,4 +1,4 @@
-import { MockProvider } from "../../api/src/index.js";
+import { MockProvider, type Provider } from "../../api/src/index.js";
 import { CommandRegistry } from "../../commands/src/index.js";
 import { defaultUpstreamPaths } from "../../compat/src/index.js";
 import { LspManager } from "../../lsp/src/index.js";
@@ -15,28 +15,34 @@ import { ControlSequenceEngine } from "./sequence.js";
 import { TurnEngine } from "./turn.js";
 
 export class StarterSystemApplication {
-  readonly provider = new MockProvider();
+  readonly provider: Provider;
   readonly toolExecutor = new MockToolExecutor();
   readonly telemetry = new ConsoleTelemetrySink();
-  readonly runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry);
+  readonly runtime: ConversationRuntime;
   readonly commands = new CommandRegistry();
   readonly tools = new ToolRegistry();
   readonly plugins = new PluginRegistry();
   readonly lifecycle = new LifecycleTracker();
   readonly dispatcher = new SystemDispatcher(this.commands, this.tools);
-  readonly controlSequence = new ControlSequenceEngine(
-    this.runtime,
-    this.commands,
-    this.dispatcher,
-    this.lifecycle,
-    this.telemetry,
-  );
+  readonly controlSequence: ControlSequenceEngine;
   readonly turn: TurnEngine;
   readonly server: Server;
   readonly lsp = new LspManager();
   readonly paths = defaultUpstreamPaths();
 
-  constructor(readonly config: StarterSystemConfig = DEFAULT_STARTER_SYSTEM_CONFIG) {
+  constructor(
+    readonly config: StarterSystemConfig = DEFAULT_STARTER_SYSTEM_CONFIG,
+    provider?: Provider,
+  ) {
+    this.provider = provider ?? new MockProvider();
+    this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry);
+    this.controlSequence = new ControlSequenceEngine(
+      this.runtime,
+      this.commands,
+      this.dispatcher,
+      this.lifecycle,
+      this.telemetry,
+    );
     this.server = new Server({ port: config.port });
     this.turn = new TurnEngine(this.controlSequence, {
       maxTurns: config.maxTurns,
@@ -44,12 +50,12 @@ export class StarterSystemApplication {
     });
   }
 
-  runDemo(): string[] {
+  async runDemo(): Promise<string[]> {
     this.controlSequence.bootstrap();
     return [
-      this.controlSequence.handle(`/${this.config.commandDemoName}`).output,
-      this.controlSequence.handle(this.config.greeting).output,
-      this.controlSequence.handle(`/tool ${this.config.toolDemoCommand}`).output,
+      (await this.controlSequence.handle(`/${this.config.commandDemoName}`)).output,
+      (await this.controlSequence.handle(this.config.greeting)).output,
+      (await this.controlSequence.handle(`/tool ${this.config.toolDemoCommand}`)).output,
     ];
   }
 

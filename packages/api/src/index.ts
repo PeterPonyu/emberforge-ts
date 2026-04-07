@@ -1,5 +1,5 @@
 export type { MessageRequest, MessageResponse } from "./types.js";
-export { DEFAULT_MODEL, MockProvider } from "./provider.js";
+export { DEFAULT_MODEL } from "./provider.js";
 export type { Provider } from "./provider.js";
-
-export const RUST_API_REFERENCE = "/home/zeyufu/Desktop/emberforge/crates/api/src/providers/mod.rs";
+export { MockProvider } from "./mock_provider.js";
+export { OllamaProvider } from "./ollama_provider.js";

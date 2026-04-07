@@ -1,20 +1,5 @@
 import { ControlSequenceEngine, type SequenceRecord } from "./sequence.js";
 
-// TurnEngine mirrors the responsibility of QueryEngine in claude-code-src
-// (claude-code-src/QueryEngine.ts:186): on top of the existing
-// ControlSequenceEngine, it owns interruptibility, accumulated usage, and
-// per-session budget guardrails for the control sequence layer.
-//
-// What QueryEngine adds beyond a plain dispatch+execute pipeline:
-//   - submit a turn
-//   - track tokens / cost
-//   - enforce maxTurns / maxBudgetUsd
-//   - support interrupt() at any point
-//
-// The reference is a single 1320-line class; this translation keeps the
-// concept but stays small and composable, in the spirit of the existing
-// packages/system layout (one file per concern).
-
 export interface TurnUsage {
   inputTokens: number;
   outputTokens: number;
@@ -70,7 +55,7 @@ export class TurnEngine {
     private readonly budget: TurnBudget,
   ) {}
 
-  submit(input: string, estimated: TurnUsage): SequenceRecord {
+  async submit(input: string, estimated: TurnUsage): Promise<SequenceRecord> {
     if (this.interrupted) {
       throw new TurnInterruptedError();
     }
@@ -82,7 +67,7 @@ export class TurnEngine {
       throw new TurnBudgetExceededError();
     }
 
-    const record = this.sequence.handle(input);
+    const record = await this.sequence.handle(input);
 
     if (this.interrupted) {
       throw new TurnInterruptedError();

@@ -10,7 +10,9 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
 }
