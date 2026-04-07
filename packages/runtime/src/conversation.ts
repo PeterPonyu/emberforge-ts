@@ -23,7 +23,7 @@ export class ConversationRuntime {
     let output: string;
     if (input.startsWith("/tool ")) {
       const payload = input.slice(6);
-      output = this.toolExecutor.execute("bash", payload);
+      output = await this.toolExecutor.execute("bash", payload);
       this.telemetry.record({ name: "tool_executed", details: output });
     } else {
       output = (await this.provider.sendMessage({

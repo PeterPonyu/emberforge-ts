@@ -6,7 +6,7 @@ import { PluginRegistry } from "../../plugins/src/index.js";
 import { ConversationRuntime } from "../../runtime/src/index.js";
 import { Server } from "../../server/src/index.js";
 import { ConsoleTelemetrySink } from "../../telemetry/src/index.js";
-import { MockToolExecutor, ToolRegistry } from "../../tools/src/index.js";
+import { RealToolExecutor, ToolRegistry } from "../../tools/src/index.js";
 import { SystemDispatcher } from "./dispatch.js";
 import { DEFAULT_STARTER_SYSTEM_CONFIG, type StarterSystemConfig } from "./config.js";
 import { LifecycleTracker } from "./lifecycle.js";
@@ -16,7 +16,7 @@ import { TurnEngine } from "./turn.js";
 
 export class StarterSystemApplication {
   readonly provider: Provider;
-  readonly toolExecutor = new MockToolExecutor();
+  readonly toolExecutor = new RealToolExecutor();
   readonly telemetry = new ConsoleTelemetrySink();
   readonly runtime: ConversationRuntime;
   readonly commands = new CommandRegistry();
