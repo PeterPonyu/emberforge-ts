@@ -12,6 +12,7 @@ import { DEFAULT_STARTER_SYSTEM_CONFIG, type StarterSystemConfig } from "./confi
 import { LifecycleTracker } from "./lifecycle.js";
 import type { StarterSystemReport } from "./report.js";
 import { ControlSequenceEngine } from "./sequence.js";
+import { TurnEngine } from "./turn.js";
 
 export class StarterSystemApplication {
   readonly provider = new MockProvider();
@@ -30,12 +31,17 @@ export class StarterSystemApplication {
     this.lifecycle,
     this.telemetry,
   );
+  readonly turn: TurnEngine;
   readonly server: Server;
   readonly lsp = new LspManager();
   readonly paths = defaultUpstreamPaths();
 
   constructor(readonly config: StarterSystemConfig = DEFAULT_STARTER_SYSTEM_CONFIG) {
     this.server = new Server({ port: config.port });
+    this.turn = new TurnEngine(this.controlSequence, {
+      maxTurns: config.maxTurns,
+      maxCostUsd: config.maxCostUsd,
+    });
   }
 
   runDemo(): string[] {

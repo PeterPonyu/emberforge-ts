@@ -8,4 +8,6 @@ export { LifecycleTracker } from "./lifecycle.js";
 export type { LifecycleState } from "./lifecycle.js";
 export { ControlSequenceEngine } from "./sequence.js";
 export type { SequenceRecord } from "./sequence.js";
+export { TurnEngine, TurnInterruptedError, TurnBudgetExceededError, EMPTY_TURN_USAGE, addTurnUsage } from "./turn.js";
+export type { TurnUsage, TurnBudget } from "./turn.js";
 export { StarterSystemApplication } from "./application.js";

@@ -4,6 +4,8 @@ export interface StarterSystemConfig {
   commandDemoName: string;
   greeting: string;
   toolDemoCommand: string;
+  maxTurns: number;
+  maxCostUsd: number;
 }
 
 export const DEFAULT_STARTER_SYSTEM_CONFIG: StarterSystemConfig = {
@@ -12,4 +14,6 @@ export const DEFAULT_STARTER_SYSTEM_CONFIG: StarterSystemConfig = {
   commandDemoName: "help",
   greeting: "hello from typescript system",
   toolDemoCommand: "printf translated",
+  maxTurns: 16,
+  maxCostUsd: 1.0,
 };
