@@ -1,8 +1,8 @@
 # Emberforge (TypeScript)
 
-**A local-first coding forge for serious developers.**
+**Local-first terminal tooling for language-model workflows.**
 
-Emberforge is an interactive coding assistant that runs in your terminal, powered by local LLMs via Ollama. It provides a rich REPL with tool execution, session management, plugins, and multi-provider support. This is the TypeScript implementation, built as a Node.js monorepo.
+Emberforge is a terminal coding tool that works with local models through Ollama and can use hosted providers when configured. It includes a REPL, tool execution, session management, plugins, and multiple provider backends. This repository contains the TypeScript implementation, organized as a Node.js monorepo.
 
 ## Quick Start
 
@@ -26,11 +26,11 @@ node dist/apps/ember-cli/src/main.js --model qwen3:8b
 ## Features
 
 - **Local-first**: Runs with Ollama — no API keys needed for local models
-- **Cloud fallback**: Anthropic Claude, xAI Grok when API keys are configured
-- **Smart routing**: Selects models by task complexity
-- **Rich slash commands**: `/help`, `/status`, `/doctor`, `/model`, `/compact`, `/review`, `/commit`, `/pr`, and more
-- **Built-in tools**: Bash, file ops, search, web, notebooks, agents, skills
-- **Session persistence**: Save, resume, export conversations
+- **Hosted providers**: Anthropic Claude and xAI Grok when API keys are configured
+- **Task-based model selection**: Selects models by task complexity
+- **Slash commands**: `/help`, `/status`, `/doctor`, `/model`, `/compact`, `/review`, `/commit`, `/pr`, and more
+- **Tools**: bash, file ops, search, web, notebooks, agents, skills
+- **Sessions**: Save, resume, export conversations
 - **Plugin system**: Extend with custom tools and hooks
 - **MCP integration**: Connect to Model Context Protocol servers
 - **Telemetry**: Session tracing and usage analytics
