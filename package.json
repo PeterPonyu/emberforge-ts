@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/apps/ember-cli/src/main.js",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/packages/tools/src/real_executor.test.js dist-test/packages/api/src/ollama_provider.test.js dist-test/packages/runtime/src/session_store.test.js dist-test/packages/runtime/src/repl.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/packages/tools/src/real_executor.test.js dist-test/packages/api/src/ollama_provider.test.js dist-test/packages/runtime/src/session_store.test.js dist-test/packages/runtime/src/repl.test.js dist-test/packages/commands/src/registry.test.js dist-test/packages/system/src/doctor.test.js dist-test/packages/system/src/starter_commands.test.js"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

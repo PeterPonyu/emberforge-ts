@@ -7,15 +7,16 @@ export class OllamaProvider implements Provider {
 
   constructor(baseURL?: string, model?: string) {
     this.baseURL = baseURL ?? process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
-    this.model = model ?? "llama3.2";
+    this.model = model ?? process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? "qwen3:8b";
   }
 
   async sendMessage(request: MessageRequest): Promise<MessageResponse> {
+    const effectiveModel = request.model || this.model;
     const response = await fetch(`${this.baseURL}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model: this.model,
+        model: effectiveModel,
         messages: [{ role: "user", content: request.prompt }],
         stream: true,
       }),

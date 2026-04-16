@@ -7,10 +7,12 @@ import { ConversationRuntime } from "../../runtime/src/index.js";
 import { Server } from "../../server/src/index.js";
 import { ConsoleTelemetrySink } from "../../telemetry/src/index.js";
 import { RealToolExecutor, ToolRegistry } from "../../tools/src/index.js";
+import { StarterBuddyState } from "./buddy.js";
 import { SystemDispatcher } from "./dispatch.js";
 import { DEFAULT_STARTER_SYSTEM_CONFIG, type StarterSystemConfig } from "./config.js";
 import { LifecycleTracker } from "./lifecycle.js";
 import type { StarterSystemReport } from "./report.js";
+import { TaskQuestionStateStore } from "./task_question_state.js";
 import { ControlSequenceEngine } from "./sequence.js";
 import { TurnEngine } from "./turn.js";
 
@@ -19,6 +21,8 @@ export class StarterSystemApplication {
   readonly toolExecutor = new RealToolExecutor();
   readonly telemetry = new ConsoleTelemetrySink();
   readonly runtime: ConversationRuntime;
+  readonly buddy = new StarterBuddyState();
+  readonly taskQuestionState = new TaskQuestionStateStore();
   readonly commands = new CommandRegistry();
   readonly tools = new ToolRegistry();
   readonly plugins = new PluginRegistry();

@@ -26,8 +26,9 @@ export class ConversationRuntime {
       output = await this.toolExecutor.execute("bash", payload);
       this.telemetry.record({ name: "tool_executed", details: output });
     } else {
+      const activeModel = process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? DEFAULT_MODEL;
       output = (await this.provider.sendMessage({
-        model: DEFAULT_MODEL,
+        model: activeModel,
         prompt: input,
       })).text;
       this.telemetry.record({ name: "provider_completed", details: output });
