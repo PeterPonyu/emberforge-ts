@@ -1,14 +1,60 @@
 import { OllamaProvider } from "../../../packages/api/src/index.js";
-import { DEFAULT_STARTER_SYSTEM_CONFIG, StarterSystemApplication } from "../../../packages/system/src/index.js";
+import { buildDoctorReport, DEFAULT_STARTER_SYSTEM_CONFIG, executeStarterSlashCommand, StarterSystemApplication } from "../../../packages/system/src/index.js";
 import { Repl, SessionStore, newSessionId } from "../../../packages/runtime/src/index.js";
 import type { ConversationMessage } from "../../../packages/runtime/src/index.js";
 
 const useRepl =
   process.argv.includes("--repl") || process.argv.length === 2;
 
-if (useRepl) {
-  const model = process.env.OLLAMA_MODEL ?? "qwen3:8b";
-  const provider = new OllamaProvider(undefined, model);
+function resolveCliModelArg(argv: string[]): string | null {
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index] ?? "";
+    if (current === "--model") {
+      return argv[index + 1]?.trim() || null;
+    }
+    if (current.startsWith("--model=")) {
+      return current.slice("--model=".length).trim() || null;
+    }
+  }
+  return null;
+}
+
+function stripConsumedCliFlags(argv: string[]): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index] ?? "";
+    if (current === "--model") {
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--model=")) {
+      continue;
+    }
+    result.push(current);
+  }
+  return result;
+}
+
+const cliModel = resolveCliModelArg(process.argv.slice(2));
+if (cliModel) {
+  process.env.OLLAMA_MODEL = cliModel;
+  process.env.EMBER_MODEL = cliModel;
+}
+const remainingArgs = stripConsumedCliFlags(process.argv.slice(2));
+const doctorArgs = remainingArgs;
+const doctorMode = doctorArgs[0] === "doctor";
+
+if (doctorMode) {
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+  const doctorSubmode = doctorArgs[1]?.trim();
+  if (doctorSubmode === "status") {
+    console.log(executeStarterSlashCommand(app, "/doctor status"));
+  } else {
+    console.log(buildDoctorReport(app.report()));
+  }
+  app.shutdown();
+} else if (useRepl) {
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
   const store = new SessionStore();
   const messages: ConversationMessage[] = [];
 
@@ -16,13 +62,15 @@ if (useRepl) {
     prompt: "ember> ",
     onInput: async (line: string): Promise<string> => {
       messages.push({ role: "user", content: line, timestamp: new Date().toISOString() });
-      try {
-        const response = await provider.sendMessage({ model, prompt: line });
-        messages.push({ role: "assistant", content: response.text, timestamp: new Date().toISOString() });
-        return response.text;
-      } catch (err) {
-        return `[error: ${(err as Error).message}]`;
+      const slashOutput = executeStarterSlashCommand(app, line);
+      if (slashOutput !== null) {
+        messages.push({ role: "assistant", content: slashOutput, timestamp: new Date().toISOString() });
+        return slashOutput;
       }
+
+      const record = await app.controlSequence.handle(line);
+      messages.push({ role: "assistant", content: record.output, timestamp: new Date().toISOString() });
+      return record.output;
     },
     onExit: (): void => {
       if (messages.length > 0) {
@@ -36,11 +84,26 @@ if (useRepl) {
           console.error(`[ember] failed to save session: ${(err as Error).message}`);
         });
       }
+      app.shutdown();
     },
   });
 
   await repl.start();
 } else {
+  const rawCommand = remainingArgs.join(" ").trim();
+  if (rawCommand.startsWith("/")) {
+    const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+    const output = executeStarterSlashCommand(app, rawCommand);
+    if (output !== null) {
+      console.log(output);
+      app.shutdown();
+      process.exit(0);
+    }
+    const record = await app.controlSequence.handle(rawCommand);
+    console.log(record.output);
+    app.shutdown();
+    process.exit(0);
+  }
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
   const [commandReply, firstReply, secondReply] = await app.runDemo();
   app.shutdown();
