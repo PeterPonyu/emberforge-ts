@@ -31,7 +31,7 @@ node dist/apps/ember-cli/src/main.js --model qwen3:8b
 - **Slash commands**: `/help`, `/status`, `/doctor`, `/model`, `/questions`, `/tasks`, `/buddy`, `/compact`, `/review`, `/commit`, `/pr`, and more
 - **Tools**: bash, file ops, search, web, notebooks, agents, skills
 - **Sessions**: Save, resume, export conversations
-- **Plugin system**: Extend with custom tools and hooks
+- **Plugin system**: Extend with custom tools today; runtime hook parity is planned
 - **MCP integration**: Connect to Model Context Protocol servers
 - **Telemetry**: Session tracing and usage analytics
 - **Prompt caching**: Request fingerprinting with TTL
@@ -47,7 +47,7 @@ packages/
 ├── commands/       Shared slash command definitions and help text
 ├── compat/         Compatibility layer and legacy path resolution
 ├── lsp/            Language Server Protocol integration
-├── plugins/        Plugin system with pre/post tool hooks
+├── plugins/        Plugin metadata and registry surfaces; runtime hook parity is planned
 ├── runtime/        Session state, conversation history, compaction
 ├── server/         HTTP/SSE server infrastructure
 ├── system/         Application lifecycle, config, context, diagnostics
