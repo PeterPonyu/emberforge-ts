@@ -67,14 +67,29 @@ test("executeStarterSlashCommand supports the starter buddy lifecycle", () => {
   assert.match(hatchOutput, /name: Waddles/);
   assert.match(hatchOutput, /species: Duck/);
 
+  const secondHatchOutput = executeStarterSlashCommand(app, "/buddy hatch") ?? "";
+  assert.match(secondHatchOutput, /status: companion already active/);
+  assert.match(secondHatchOutput, /\/buddy rehatch/);
+
   const buddyOutput = executeStarterSlashCommand(app, "/buddy") ?? "";
   assert.match(buddyOutput, /commands: \/buddy pet/);
 
   const muteOutput = executeStarterSlashCommand(app, "/buddy mute") ?? "";
   assert.match(muteOutput, /status: muted/);
+  assert.match(muteOutput, /hide quietly/);
+
+  const secondMuteOutput = executeStarterSlashCommand(app, "/buddy mute") ?? "";
+  assert.match(secondMuteOutput, /status: already muted/);
 
   const petOutput = executeStarterSlashCommand(app, "/buddy pet") ?? "";
   assert.match(petOutput, /reaction: Waddles purrs happily!/);
+
+  const unmuteOutput = executeStarterSlashCommand(app, "/buddy unmute") ?? "";
+  assert.match(unmuteOutput, /status: active/);
+  assert.match(unmuteOutput, /welcome back/);
+
+  const secondUnmuteOutput = executeStarterSlashCommand(app, "/buddy unmute") ?? "";
+  assert.match(secondUnmuteOutput, /status: already active/);
 
   const rehatchOutput = executeStarterSlashCommand(app, "/buddy rehatch") ?? "";
   assert.match(rehatchOutput, /name: Goosberry/);

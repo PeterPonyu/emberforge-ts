@@ -154,6 +154,10 @@ function renderCompanion(prefix: string, companion: StarterBuddyCompanion, note?
   return lines.join("\n");
 }
 
+function renderCommand(prefix: string, ...lines: string[]): string {
+  return [prefix, ...lines].join("\n");
+}
+
 export function executeBuddyCommand(state: StarterBuddyState, payload: string): string {
   const trimmed = payload.trim();
   const action = trimmed === "" ? "" : trimmed.split(/\s+/, 1)[0]!;
@@ -175,14 +179,14 @@ export function executeBuddyCommand(state: StarterBuddyState, payload: string): 
       );
     }
     case "hatch": {
-      const result = state.hatch();
-      if (!result.created) {
-        return renderCompanion(
+      if (state.current()) {
+        return renderCommand(
           "[command] buddy hatch",
-          result.companion,
-          "tip: use /buddy rehatch to roll a new companion",
+          "status: companion already active",
+          "tip: use /buddy to inspect it or /buddy rehatch to replace it",
         );
       }
+      const result = state.hatch();
       return renderCompanion(
         "[command] buddy hatch",
         result.companion,
@@ -211,7 +215,7 @@ export function executeBuddyCommand(state: StarterBuddyState, payload: string): 
       ].join("\n");
     }
     case "mute": {
-      const companion = state.mute();
+      const companion = state.current();
       if (!companion) {
         return [
           "[command] buddy mute",
@@ -219,10 +223,22 @@ export function executeBuddyCommand(state: StarterBuddyState, payload: string): 
           "tip: use /buddy hatch to get one",
         ].join("\n");
       }
-      return renderCompanion("[command] buddy mute", companion);
+      if (companion.muted) {
+        return renderCommand(
+          "[command] buddy mute",
+          "status: already muted",
+          "tip: use /buddy unmute to bring it back",
+        );
+      }
+      state.mute();
+      return renderCommand(
+        "[command] buddy mute",
+        "status: muted",
+        "note: companion will hide quietly until /buddy unmute",
+      );
     }
     case "unmute": {
-      const companion = state.unmute();
+      const companion = state.current();
       if (!companion) {
         return [
           "[command] buddy unmute",
@@ -230,7 +246,15 @@ export function executeBuddyCommand(state: StarterBuddyState, payload: string): 
           "tip: use /buddy hatch to get one",
         ].join("\n");
       }
-      return renderCompanion("[command] buddy unmute", companion);
+      if (!companion.muted) {
+        return renderCommand("[command] buddy unmute", "status: already active");
+      }
+      state.unmute();
+      return renderCommand(
+        "[command] buddy unmute",
+        "status: active",
+        "note: welcome back",
+      );
     }
     default:
       return [
