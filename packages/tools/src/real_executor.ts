@@ -12,10 +12,58 @@ function isBlockedCommand(cmd: string): boolean {
   return BLOCKED_COMMAND_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
 }
 
+function isWithin(parent: string, child: string): boolean {
+  return child === parent || child.startsWith(parent + path.sep);
+}
+
 function isWorkspaceRelative(filePath: string): boolean {
+  return isWithin(process.cwd(), path.resolve(filePath));
+}
+
+/**
+ * Resolve the real (symlink-free) path of `filePath` and confirm it stays
+ * inside the workspace root. The target itself may not exist yet, so we
+ * resolve `fs.realpath()` of the nearest existing ancestor directory and then
+ * re-join the not-yet-created components. This defeats symlinks that live
+ * inside the workspace but point outside it. Returns the real path on success.
+ */
+async function resolveWithinWorkspace(filePath: string): Promise<string> {
   const resolved = path.resolve(filePath);
-  const cwd = process.cwd();
-  return resolved.startsWith(cwd + path.sep) || resolved === cwd;
+
+  // Cheap lexical gate first (also rejects `..` traversal pre-symlink).
+  if (!isWorkspaceRelative(resolved)) {
+    throw new Error(`Path outside workspace: ${filePath}`);
+  }
+
+  const realRoot = await fs.realpath(process.cwd());
+
+  // Walk up to the nearest existing ancestor, then realpath it.
+  let existing = resolved;
+  const pending: string[] = [];
+  while (true) {
+    try {
+      const realExisting = await fs.realpath(existing);
+      const realTarget = pending.length
+        ? path.join(realExisting, ...pending)
+        : realExisting;
+      if (!isWithin(realRoot, realTarget)) {
+        throw new Error(`Path outside workspace: ${filePath}`);
+      }
+      return realTarget;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        throw err;
+      }
+      const parent = path.dirname(existing);
+      if (parent === existing) {
+        // Reached filesystem root without an existing ancestor.
+        throw new Error(`Path outside workspace: ${filePath}`);
+      }
+      pending.unshift(path.basename(existing));
+      existing = parent;
+    }
+  }
 }
 
 export class RealToolExecutor implements ToolExecutor {
@@ -33,19 +81,15 @@ export class RealToolExecutor implements ToolExecutor {
   }
 
   private async readFile(filePath: string): Promise<string> {
-    if (!isWorkspaceRelative(filePath)) {
-      throw new Error(
-        `Path outside workspace: ${filePath}`,
-      );
-    }
+    const realPath = await resolveWithinWorkspace(filePath);
 
-    const stat = await fs.stat(filePath);
+    const stat = await fs.stat(realPath);
     if (stat.size > MAX_FILE_SIZE) {
       throw new Error(
         `File too large: ${stat.size} bytes exceeds 10 MB limit`,
       );
     }
-    return fs.readFile(filePath, "utf-8");
+    return fs.readFile(realPath, "utf-8");
   }
 
   private async writeFile(input: string): Promise<string> {
@@ -58,13 +102,9 @@ export class RealToolExecutor implements ToolExecutor {
     const filePath = input.slice(0, newlineIndex);
     const content = input.slice(newlineIndex + 1);
 
-    if (!isWorkspaceRelative(filePath)) {
-      throw new Error(
-        `Path outside workspace: ${filePath}`,
-      );
-    }
+    const realPath = await resolveWithinWorkspace(filePath);
 
-    await fs.writeFile(filePath, content);
+    await fs.writeFile(realPath, content);
     return `Written: ${filePath}`;
   }
 
