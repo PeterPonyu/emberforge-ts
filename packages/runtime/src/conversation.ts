@@ -10,12 +10,22 @@ export interface TurnSummary {
 
 export class ConversationRuntime {
   private readonly session = new Session();
+  private activeModel: string | undefined;
 
   constructor(
     private readonly provider: Provider,
     private readonly toolExecutor: ToolExecutor,
     private readonly telemetry: TelemetrySink,
   ) {}
+
+  getActiveModel(): string {
+    return this.activeModel ?? process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? DEFAULT_MODEL;
+  }
+
+  setActiveModel(model: string): string {
+    this.activeModel = model;
+    return this.activeModel;
+  }
 
   async runTurn(input: string): Promise<string> {
     this.telemetry.record({ name: "turn_started", details: input });
@@ -26,9 +36,8 @@ export class ConversationRuntime {
       output = await this.toolExecutor.execute("bash", payload);
       this.telemetry.record({ name: "tool_executed", details: output });
     } else {
-      const activeModel = process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? DEFAULT_MODEL;
       output = (await this.provider.sendMessage({
-        model: activeModel,
+        model: this.getActiveModel(),
         prompt: input,
       })).text;
       this.telemetry.record({ name: "provider_completed", details: output });

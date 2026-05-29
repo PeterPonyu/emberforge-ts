@@ -54,6 +54,28 @@ test("executeStarterSlashCommand supports model list and payload-bearing review/
   app.shutdown();
 });
 
+test("executeStarterSlashCommand /model switches the model used by the next runtime turn", async () => {
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
+
+  // No-argument /model inspects the current active model.
+  const inspect = executeStarterSlashCommand(app, "/model") ?? "";
+  assert.match(inspect, /\[command\] model: qwen3:8b/);
+
+  // /model <name> reports the switch...
+  const switched = executeStarterSlashCommand(app, "/model llama3:8b") ?? "";
+  assert.match(switched, /\[command\] model: switched to llama3:8b/);
+
+  // ...and inspection now reflects the new model.
+  assert.match(executeStarterSlashCommand(app, "/model") ?? "", /\[command\] model: llama3:8b/);
+
+  // The very next normal runtime turn must use the newly selected model.
+  const turnOutput = await app.runtime.runTurn("hello");
+  assert.match(turnOutput, /model=llama3:8b/);
+  assert.doesNotMatch(turnOutput, /model=qwen3:8b/);
+
+  app.shutdown();
+});
+
 test("executeStarterSlashCommand supports the starter buddy lifecycle", () => {
   const originalStatePath = process.env.EMBER_BUDDY_STATE_PATH;
   process.env.EMBER_BUDDY_STATE_PATH = join(mkdtempSync(join(tmpdir(), "ember-buddy-ts-")), "buddy-state.json");

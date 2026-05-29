@@ -160,11 +160,13 @@ export function executeStarterSlashCommand(app: StarterSystemApplication, input:
       }
       return `[command] doctor: unsupported mode ${payload}`;
     case "model": {
-      const activeModel = process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? "qwen3:8b";
       if (payload === "list") {
-        return `[command] model list: ${activeModel}`;
+        return `[command] model list: ${app.runtime.getActiveModel()}`;
       }
-      return `[command] model: ${payload || activeModel}`;
+      if (payload === "") {
+        return `[command] model: ${app.runtime.getActiveModel()}`;
+      }
+      return `[command] model: switched to ${app.runtime.setActiveModel(payload)}`;
     }
     case "questions":
       return executeQuestionsCommand(app, payload);
