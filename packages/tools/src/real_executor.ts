@@ -33,6 +33,12 @@ export class RealToolExecutor implements ToolExecutor {
   }
 
   private async readFile(filePath: string): Promise<string> {
+    if (!isWorkspaceRelative(filePath)) {
+      throw new Error(
+        `Path outside workspace: ${filePath}`,
+      );
+    }
+
     const stat = await fs.stat(filePath);
     if (stat.size > MAX_FILE_SIZE) {
       throw new Error(
