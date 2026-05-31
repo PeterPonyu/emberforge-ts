@@ -26,4 +26,4 @@ export {
   type HttpHookConfig,
 } from "./hooks/index.js";
 
-export const RUST_PLUGINS_REFERENCE = "/home/zeyufu/Desktop/emberforge/crates/plugins/src/types.rs";
+export const RUST_PLUGINS_REFERENCE = "crates/plugins/src/types.rs";
