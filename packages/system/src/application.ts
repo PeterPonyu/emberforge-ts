@@ -4,6 +4,7 @@ import { defaultUpstreamPaths } from "../../compat/src/index.js";
 import { LspManager } from "../../lsp/src/index.js";
 import { PluginRegistry } from "../../plugins/src/index.js";
 import { ConversationRuntime } from "../../runtime/src/index.js";
+import { McpClient, type McpServerConfig } from "../../mcp/src/index.js";
 import { Server } from "../../server/src/index.js";
 import { ConsoleTelemetrySink } from "../../telemetry/src/index.js";
 import { RealToolExecutor, ToolRegistry } from "../../tools/src/index.js";
@@ -24,7 +25,8 @@ export class StarterSystemApplication {
   readonly buddy = new StarterBuddyState();
   readonly taskQuestionState = new TaskQuestionStateStore();
   readonly commands = new CommandRegistry();
-  readonly tools = new ToolRegistry();
+  tools = new ToolRegistry();
+  readonly mcp: McpClient;
   readonly plugins = new PluginRegistry();
   readonly lifecycle = new LifecycleTracker();
   readonly dispatcher = new SystemDispatcher(this.commands, this.tools);
@@ -37,8 +39,10 @@ export class StarterSystemApplication {
   constructor(
     readonly config: StarterSystemConfig = DEFAULT_STARTER_SYSTEM_CONFIG,
     provider?: Provider,
+    mcpServers: McpServerConfig[] = [],
   ) {
     this.provider = provider ?? new MockProvider();
+    this.mcp = new McpClient(mcpServers);
     this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry);
     this.controlSequence = new ControlSequenceEngine(
       this.runtime,
@@ -63,8 +67,23 @@ export class StarterSystemApplication {
     ];
   }
 
+  /**
+   * Connects to any configured MCP servers, discovers their tools, and merges
+   * them into the tool registry under their qualified `mcp__server__tool`
+   * names. No-op (and never spawns a process) when no servers are configured,
+   * keeping application startup offline-safe by default.
+   */
+  async initMcp(): Promise<void> {
+    if (this.mcp.serverNames().length === 0) {
+      return;
+    }
+    await this.mcp.discoverAll();
+    this.tools = this.mcp.registerInto(this.tools);
+  }
+
   shutdown(): void {
     this.controlSequence.shutdown();
+    void this.mcp.shutdown();
   }
 
   report(): StarterSystemReport {

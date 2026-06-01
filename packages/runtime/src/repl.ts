@@ -48,6 +48,8 @@ export class Repl {
     rl.prompt();
 
     return new Promise<void>((resolve) => {
+      let closed = false;
+
       rl.on("line", async (raw) => {
         const line = raw.trim();
         if (line === "/quit" || line === "/exit") {
@@ -60,10 +62,15 @@ export class Repl {
         } catch (err) {
           this.opts.output.write(`error: ${(err as Error).message}\n`);
         }
-        rl.prompt();
+        // The interface can close (EOF / /quit) while an async onInput awaits;
+        // re-prompting a closed readline throws ERR_USE_AFTER_CLOSE.
+        if (!closed) {
+          rl.prompt();
+        }
       });
 
       rl.on("close", () => {
+        closed = true;
         if (this.opts.onExit) this.opts.onExit();
         resolve();
       });
