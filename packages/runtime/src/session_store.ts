@@ -1,7 +1,15 @@
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+
+/**
+ * Default session directory: `.emberforge/sessions` under the current working
+ * directory, mirroring the Rust port's project-local session storage. Resolved
+ * lazily so tests and callers can override the base dir explicitly.
+ */
+export function defaultSessionDir(): string {
+  return join(process.cwd(), ".emberforge", "sessions");
+}
 
 export interface ConversationMessage {
   role: "user" | "assistant" | "system" | "tool";
@@ -43,11 +51,52 @@ type MessageRecord = {
 
 export class SessionStore {
   constructor(
-    private readonly baseDir: string = join(homedir(), ".emberforge", "sessions"),
+    private readonly baseDir: string = defaultSessionDir(),
   ) {}
 
   private pathFor(id: string): string {
     return join(this.baseDir, `${id}.jsonl`);
+  }
+
+  private encodeMessage(message: ConversationMessage): string {
+    const record: MessageRecord = {
+      type: "message",
+      role: message.role,
+      content: message.content,
+      ...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
+    };
+    return JSON.stringify(record);
+  }
+
+  /**
+   * Ensures the JSONL file for `session` exists with its meta header line.
+   * Idempotent: if the file already exists it is left untouched so prior turns
+   * are preserved. Call once before streaming turns with {@link appendMessage}.
+   */
+  async ensureSession(session: Pick<Session, "id" | "createdAt">): Promise<void> {
+    await fs.mkdir(this.baseDir, { recursive: true });
+    const path = this.pathFor(session.id);
+    try {
+      await fs.access(path);
+      return;
+    } catch {
+      // not present yet — write the meta header
+    }
+    const meta: MetaRecord = {
+      type: "session",
+      id: session.id,
+      createdAt: session.createdAt,
+    };
+    await fs.writeFile(path, JSON.stringify(meta) + "\n", "utf-8");
+  }
+
+  /**
+   * Appends a single message record to the session's JSONL file. Used to
+   * persist after each turn rather than only on exit, mirroring the Rust port's
+   * append-on-turn behavior. Assumes {@link ensureSession} has run first.
+   */
+  async appendMessage(id: string, message: ConversationMessage): Promise<void> {
+    await fs.appendFile(this.pathFor(id), this.encodeMessage(message) + "\n", "utf-8");
   }
 
   async save(session: Session): Promise<void> {
@@ -59,13 +108,7 @@ export class SessionStore {
     };
     const lines: string[] = [JSON.stringify(meta)];
     for (const m of session.messages) {
-      const record: MessageRecord = {
-        type: "message",
-        role: m.role,
-        content: m.content,
-        ...(m.timestamp !== undefined ? { timestamp: m.timestamp } : {}),
-      };
-      lines.push(JSON.stringify(record));
+      lines.push(this.encodeMessage(m));
     }
     await fs.writeFile(this.pathFor(session.id), lines.join("\n") + "\n", "utf-8");
   }

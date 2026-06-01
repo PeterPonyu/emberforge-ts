@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { SessionStore, newSessionId } from "./session_store.js";
+import { SessionStore, newSessionId, defaultSessionDir } from "./session_store.js";
 import type { Session } from "./session_store.js";
 
 function makeSession(): Session {
@@ -91,6 +91,50 @@ test("load on missing id rejects", async () => {
   } finally {
     await fs.rm(dir, { recursive: true });
   }
+});
+
+test("per-turn append round trips and resumes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ember-session-test-"));
+  try {
+    const store = new SessionStore(dir);
+    const id = newSessionId();
+    const createdAt = new Date().toISOString();
+
+    // Simulate streaming turns: ensure header once, append after each turn.
+    await store.ensureSession({ id, createdAt });
+    await store.appendMessage(id, { role: "user", content: "first" });
+    await store.appendMessage(id, { role: "assistant", content: "reply-1" });
+
+    // Reload mid-session (resume) and confirm both messages persisted.
+    const resumed = await new SessionStore(dir).load(id);
+    assert.equal(resumed.id, id);
+    assert.equal(resumed.createdAt, createdAt);
+    assert.equal(resumed.messages.length, 2);
+    assert.equal(resumed.messages[0].content, "first");
+    assert.equal(resumed.messages[1].content, "reply-1");
+
+    // Append more turns to the same file; ensureSession must be idempotent.
+    await store.ensureSession({ id, createdAt });
+    await store.appendMessage(id, { role: "user", content: "second" });
+
+    const final = await new SessionStore(dir).load(id);
+    assert.equal(final.messages.length, 3);
+    assert.equal(final.messages[2].content, "second");
+
+    // The summary should reflect the appended message count.
+    const summaries = await store.list();
+    const summary = summaries.find((s) => s.id === id);
+    assert.ok(summary !== undefined);
+    assert.equal(summary.messageCount, 3);
+  } finally {
+    await fs.rm(dir, { recursive: true });
+  }
+});
+
+test("defaultSessionDir points at project-local .emberforge/sessions", () => {
+  const dir = defaultSessionDir();
+  assert.ok(dir.endsWith(path.join(".emberforge", "sessions")));
+  assert.ok(dir.startsWith(process.cwd()));
 });
 
 test("JSONL format is valid", async () => {
