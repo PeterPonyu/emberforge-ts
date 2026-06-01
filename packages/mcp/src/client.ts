@@ -1,5 +1,5 @@
 import type { ToolSpec } from "../../tools/src/index.js";
-import { ToolRegistry } from "../../tools/src/index.js";
+import { PermissionMode, ToolRegistry } from "../../tools/src/index.js";
 import { mcpToolName, mcpToolPrefix, normalizeNameForMcp } from "./names.js";
 import { McpStdioProcess } from "./stdio.js";
 import {
@@ -72,6 +72,9 @@ export class McpClient {
     return this.discovered.map((t) => ({
       name: t.qualifiedName,
       description: t.tool.description ?? `MCP tool ${t.rawName} on ${t.serverName}`,
+      inputSchema: { type: "object", properties: {} },
+      // MCP tools invoke a remote server; gate them behind full access.
+      requiredPermission: PermissionMode.DangerFullAccess,
     }));
   }
 

@@ -1,4 +1,4 @@
-import { OllamaProvider } from "../../../packages/api/src/index.js";
+import { resolveProvider } from "../../../packages/api/src/index.js";
 import { buildDoctorReport, DEFAULT_STARTER_SYSTEM_CONFIG, executeStarterSlashCommand, StarterSystemApplication } from "../../../packages/system/src/index.js";
 import { Repl, SessionStore, newSessionId } from "../../../packages/runtime/src/index.js";
 import type { ConversationMessage, SessionSummary } from "../../../packages/runtime/src/index.js";
@@ -91,7 +91,7 @@ const doctorArgs = remainingArgs;
 const doctorMode = doctorArgs[0] === "doctor";
 
 if (doctorMode) {
-  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const doctorSubmode = doctorArgs[1]?.trim();
   if (doctorSubmode === "status") {
     console.log(executeStarterSlashCommand(app, "/doctor status"));
@@ -100,7 +100,7 @@ if (doctorMode) {
   }
   app.shutdown();
 } else if (useRepl) {
-  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   // Discover + register any configured MCP tools before the REPL accepts input.
   // Offline-safe: a no-op when no MCP servers are configured.
   await app.initMcp();
@@ -194,7 +194,7 @@ if (doctorMode) {
 } else {
   const rawCommand = remainingArgs.join(" ").trim();
   if (rawCommand.startsWith("/")) {
-    const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+    const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
     const output = executeStarterSlashCommand(app, rawCommand);
     if (output !== null) {
       console.log(output);
@@ -206,7 +206,7 @@ if (doctorMode) {
     app.shutdown();
     process.exit(0);
   }
-  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, new OllamaProvider());
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const [commandReply, firstReply, secondReply] = await app.runDemo();
   app.shutdown();
   const report = app.report();
