@@ -7,7 +7,7 @@ import { ConversationRuntime } from "../../runtime/src/index.js";
 import { McpClient, type McpServerConfig } from "../../mcp/src/index.js";
 import { Server } from "../../server/src/index.js";
 import { ConsoleTelemetrySink } from "../../telemetry/src/index.js";
-import { RealToolExecutor, ToolRegistry } from "../../tools/src/index.js";
+import { PermissionMode, RealToolExecutor, ToolDispatcher, ToolRegistry } from "../../tools/src/index.js";
 import { StarterBuddyState } from "./buddy.js";
 import { SystemDispatcher } from "./dispatch.js";
 import { DEFAULT_STARTER_SYSTEM_CONFIG, type StarterSystemConfig } from "./config.js";
@@ -26,6 +26,13 @@ export class StarterSystemApplication {
   readonly taskQuestionState = new TaskQuestionStateStore();
   readonly commands = new CommandRegistry();
   tools = new ToolRegistry();
+  // Permission-gated dispatch over the local executor (EFPORT-7). Runs in
+  // danger-full-access by default so local tools (including bash) are usable.
+  readonly toolDispatcher = new ToolDispatcher(
+    this.toolExecutor,
+    this.tools,
+    PermissionMode.DangerFullAccess,
+  );
   readonly mcp: McpClient;
   readonly plugins = new PluginRegistry();
   readonly lifecycle = new LifecycleTracker();
