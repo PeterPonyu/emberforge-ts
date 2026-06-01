@@ -217,13 +217,35 @@ export class RealToolExecutor implements ToolExecutor {
   private async globSearch(input: string): Promise<string> {
     const args = parseJsonInput(input, "glob_search");
     const pattern = requireString(args, "pattern", "glob_search");
-    const cwd =
+
+    // Reject patterns that contain `..` path segments (traversal attempt).
+    const patternParts = pattern.split(/[\\/]/);
+    if (patternParts.includes("..")) {
+      throw new Error("glob_search: pattern must stay within the workspace");
+    }
+
+    const searchRoot =
       typeof args.path === "string" && args.path
         ? await resolveWithinWorkspace(args.path)
         : process.cwd();
 
+    const realRoot = await fs.realpath(process.cwd());
+
     const matches: string[] = [];
-    for await (const entry of fs.glob(pattern, { cwd })) {
+    for await (const entry of fs.glob(pattern, { cwd: searchRoot })) {
+      // entry is relative to searchRoot; resolve to absolute and confirm it
+      // stays within the workspace root (defends against edge cases in glob
+      // implementations that may still follow symlinks or odd patterns).
+      const absolute = path.resolve(searchRoot, entry);
+      try {
+        const real = await fs.realpath(absolute);
+        if (!isWithin(realRoot, real)) {
+          continue;
+        }
+      } catch {
+        // If the path doesn't exist (e.g. broken symlink), skip it.
+        continue;
+      }
       matches.push(entry);
     }
     matches.sort();
@@ -245,7 +267,12 @@ export class RealToolExecutor implements ToolExecutor {
         ? await resolveWithinWorkspace(args.path)
         : process.cwd();
 
-    const regex = new RegExp(pattern, ignoreCase ? "i" : "");
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, ignoreCase ? "i" : "");
+    } catch {
+      throw new Error("grep_search: invalid regex pattern");
+    }
     const results: string[] = [];
     for await (const filePath of walkFiles(root)) {
       let content: string;

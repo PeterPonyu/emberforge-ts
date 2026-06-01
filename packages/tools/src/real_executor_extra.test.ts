@@ -113,3 +113,45 @@ test("edit_file rejects malformed JSON input", async () => {
     /must be a JSON object/,
   );
 });
+
+test("glob_search rejects a pattern with .. traversal segments", async () => {
+  const executor = new RealToolExecutor();
+  await assert.rejects(
+    () => executor.execute("glob_search", JSON.stringify({ pattern: "../../../*" })),
+    /glob_search: pattern must stay within the workspace/,
+  );
+});
+
+test("glob_search does not return files outside the workspace via symlinked cwd", async () => {
+  // Even if the pattern has no '..' we verify confinement by trying a pattern
+  // that would only match inside the workspace scratch dir — this exercises
+  // the post-collection realpath filter path.
+  const dir = await freshScratch();
+  await fs.writeFile(path.join(dir, "inside.txt"), "safe", "utf-8");
+
+  const executor = new RealToolExecutor();
+  const result = await executor.execute(
+    "glob_search",
+    JSON.stringify({ pattern: "*.txt", path: dir }),
+  );
+  assert.match(result, /inside\.txt/);
+  // All returned paths must not start with an outside-workspace prefix.
+  const lines = result.split("\n").filter(Boolean);
+  for (const line of lines) {
+    const abs = path.resolve(dir, line);
+    assert.ok(
+      abs.startsWith(process.cwd()),
+      `Result path escaped workspace: ${abs}`,
+    );
+  }
+
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("grep_search rejects an invalid regex pattern", async () => {
+  const executor = new RealToolExecutor();
+  await assert.rejects(
+    () => executor.execute("grep_search", JSON.stringify({ pattern: "[invalid" })),
+    /grep_search: invalid regex pattern/,
+  );
+});

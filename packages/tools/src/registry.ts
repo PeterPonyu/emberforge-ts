@@ -90,7 +90,6 @@ export const DEFAULT_TOOLS: ToolSpec[] = [
       properties: {
         pattern: { type: "string" },
         path: { type: "string" },
-        glob: { type: "string" },
         "-i": { type: "boolean" },
         "-n": { type: "boolean" },
       },
