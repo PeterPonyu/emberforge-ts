@@ -104,16 +104,24 @@ packages/
 
 ## Configuration
 
-Emberforge reads configuration from (in order of priority):
+Emberforge is configured through environment variables. Persistent state
+(buddy state, task/question state, sessions) is written under the per-user
+config directory `~/.emberforge/` (and `.emberforge/sessions` in the current
+project for session transcripts). Set `EMBER_CONFIG_HOME` to relocate the
+config directory.
 
-1. `.ember.json` (project config)
-2. `.ember/settings.json` (project settings)
-3. `~/.ember/settings.json` (user settings)
+> **Note:** There is no settings-file loader yet. A layered config-file
+> precedence chain (project/user JSON settings) is **planned** but not
+> implemented — configure the tool via the environment variables below.
 
 Environment variables:
 
-- `EMBER_CONFIG_HOME` — override config directory
+- `EMBER_CONFIG_HOME` — override the config directory (default: `~/.emberforge`)
+- `EMBER_MODEL` — default model when `OLLAMA_MODEL` is unset
+- `EMBER_BUDDY_STATE_PATH` — override the buddy-state file location
+- `EMBER_TASK_STATE_PATH` — override the task/question-state file location
 - `OLLAMA_BASE_URL` — custom Ollama endpoint (default: `http://localhost:11434`)
+- `OLLAMA_MODEL` — Ollama model to route to (default: `qwen3:8b`)
 - `ANTHROPIC_API_KEY` — Anthropic API credentials *(read by the `doctor` command for diagnostics only; hosted Anthropic routing is planned)*
 - `XAI_API_KEY` — xAI API credentials *(read by the `doctor` command for diagnostics only; hosted xAI routing is planned)*
 
