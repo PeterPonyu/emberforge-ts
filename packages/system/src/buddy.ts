@@ -190,7 +190,7 @@ export function executeBuddyCommand(state: StarterBuddyState, payload: string): 
       return renderCompanion(
         "[command] buddy hatch",
         result.companion,
-        "note: starter buddy translation from claude-code-src",
+        "note: starter companion",
       );
     }
     case "rehatch":

@@ -25,5 +25,3 @@ export {
   type HookRunResult,
   type HttpHookConfig,
 } from "./hooks/index.js";
-
-export const RUST_PLUGINS_REFERENCE = "crates/plugins/src/types.rs";

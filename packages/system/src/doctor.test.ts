@@ -12,7 +12,6 @@ test("buildDoctorReport renders translated starter diagnostics", () => {
       pluginCount: 1,
       serverDescription: "server: disabled",
       lspSummary: "lsp: idle",
-      rustAnchor: "/tmp/runtime/lib.rs",
       turnCount: 0,
       handledRequestCount: 0,
       lifecycleState: "ready",

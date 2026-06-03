@@ -1,5 +1,5 @@
 export class LspManager {
   summary(): string {
-    return "TypeScript LSP manager placeholder (mirrors crates/lsp)";
+    return "TypeScript LSP manager placeholder";
   }
 }

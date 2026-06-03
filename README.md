@@ -2,9 +2,35 @@
 
 **Local-first terminal tooling for language-model workflows.**
 
-Emberforge is a terminal coding tool that works with local models through Ollama. It includes a REPL, tool execution, session management, and plugin scaffolding. This repository contains the TypeScript implementation, organized as a Node.js monorepo.
+Emberforge is a terminal coding tool that works with local models through Ollama. It includes a REPL, tool execution, session management, and plugin scaffolding. This repository contains the TypeScript implementation: a single Node.js/TypeScript project whose source is organized into internal `packages/` and `apps/` folders compiled together by one root `tsconfig.json`. It is not an npm workspaces monorepo — there is one root `package.json` and the internal folders are imported by relative path, not as published workspace packages.
 
 > **Status note:** The TypeScript port currently ships two provider backends — a built-in mock provider (for tests/offline use) and the Ollama provider used by the CLI. Hosted providers (Anthropic Claude, xAI Grok) and MCP integration are **planned** and not yet implemented in this port. Sections below mark planned capabilities explicitly.
+
+## Prerequisites: Ollama
+
+Emberforge talks to a running Ollama instance at `http://localhost:11434` by
+default, so install and start Ollama before building or running the CLI.
+
+```bash
+# Install Ollama (Linux, and the same official script on macOS)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Or on macOS with Homebrew
+brew install ollama
+
+# Start the Ollama server (leave running in its own terminal/session)
+ollama serve
+
+# Pull at least one model the CLI can route to
+ollama pull qwen3:8b
+```
+
+The Linux `install.sh` script registers a systemd service that starts Ollama
+automatically, so `ollama serve` is only needed where the service isn't running
+(for example a fresh macOS Homebrew install or a manual setup). See the
+[official Ollama install docs](https://ollama.com/download) for platform-specific
+details and alternative package managers. Override the endpoint with
+`OLLAMA_BASE_URL` if Ollama runs elsewhere.
 
 ## Quick Start
 
@@ -23,7 +49,15 @@ node dist/apps/ember-cli/src/main.js
 
 # With a specific model
 node dist/apps/ember-cli/src/main.js --model qwen3:8b
+
+# Run diagnostics (checks Ollama, env vars, and registered commands/tools)
+node dist/apps/ember-cli/src/main.js doctor
 ```
+
+> There is no `ember` binary on your `PATH` — the package ships no `bin` entry.
+> Invoke the CLI via `npm start` or `node dist/apps/ember-cli/src/main.js ...`
+> (with optional subcommands such as `doctor`, or slash commands such as
+> `/status`) as shown above.
 
 ## Features
 
@@ -66,30 +100,40 @@ packages/
 | **Anthropic** | Claude Opus, Sonnet, and Haiku families | `ANTHROPIC_API_KEY` | Planned — not yet implemented |
 | **xAI** | Grok 3, Grok 3 Mini | `XAI_API_KEY` | Planned — not yet implemented |
 
-> The CLI always constructs the Ollama provider today. The `ANTHROPIC_API_KEY` / `XAI_API_KEY` variables below are only surfaced by `ember doctor` for diagnostics; they do not yet enable hosted-provider routing.
+> The CLI always constructs the Ollama provider today. The `ANTHROPIC_API_KEY` / `XAI_API_KEY` variables below are only surfaced by the `doctor` command (`node dist/apps/ember-cli/src/main.js doctor`) for diagnostics; they do not yet enable hosted-provider routing.
 
 ## Configuration
 
-Emberforge reads configuration from (in order of priority):
+Emberforge is configured through environment variables. Persistent state
+(buddy state, task/question state, sessions) is written under the per-user
+config directory `~/.emberforge/` (and `.emberforge/sessions` in the current
+project for session transcripts). Set `EMBER_CONFIG_HOME` to relocate the
+config directory.
 
-1. `.ember.json` (project config)
-2. `.ember/settings.json` (project settings)
-3. `~/.ember/settings.json` (user settings)
+> **Note:** There is no settings-file loader yet. A layered config-file
+> precedence chain (project/user JSON settings) is **planned** but not
+> implemented — configure the tool via the environment variables below.
 
 Environment variables:
 
-- `EMBER_CONFIG_HOME` — override config directory
+- `EMBER_CONFIG_HOME` — override the config directory (default: `~/.emberforge`)
+- `EMBER_MODEL` — default model when `OLLAMA_MODEL` is unset
+- `EMBER_BUDDY_STATE_PATH` — override the buddy-state file location
+- `EMBER_TASK_STATE_PATH` — override the task/question-state file location
 - `OLLAMA_BASE_URL` — custom Ollama endpoint (default: `http://localhost:11434`)
-- `ANTHROPIC_API_KEY` — Anthropic API credentials *(read by `ember doctor` for diagnostics only; hosted Anthropic routing is planned)*
-- `XAI_API_KEY` — xAI API credentials *(read by `ember doctor` for diagnostics only; hosted xAI routing is planned)*
+- `OLLAMA_MODEL` — Ollama model to route to (default: `qwen3:8b`)
+- `ANTHROPIC_API_KEY` — Anthropic API credentials *(read by the `doctor` command for diagnostics only; hosted Anthropic routing is planned)*
+- `XAI_API_KEY` — xAI API credentials *(read by the `doctor` command for diagnostics only; hosted xAI routing is planned)*
 
 ## Project Instructions
 
-Create an `EMBER.md` file in your project root to provide persistent guidance:
+Create an `EMBER.md` file in your project root to provide persistent guidance.
+Add it by hand for now — there is no scaffolding command yet.
 
-```bash
-ember /init    # Scaffolds EMBER.md, .ember.json, and .gitignore entries
-```
+> **Planned:** an `/init` slash command that scaffolds `EMBER.md` and related
+> config/`.gitignore` entries is not yet implemented. The currently handled
+> slash commands are `/help`, `/status`, `/doctor`, `/model`, `/questions`,
+> `/tasks`, `/buddy`, `/compact`, `/review`, `/commit`, and `/pr`.
 
 ## Development
 

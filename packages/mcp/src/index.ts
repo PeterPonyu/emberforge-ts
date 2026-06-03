@@ -23,5 +23,3 @@ export type {
   McpToolCallContent,
   McpStdioTransport,
 } from "./types.js";
-
-export const RUST_MCP_REFERENCE = "crates/runtime/src/mcp_stdio.rs";

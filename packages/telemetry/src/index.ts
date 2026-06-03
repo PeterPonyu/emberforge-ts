@@ -11,5 +11,3 @@ export {
   MemoryTelemetrySink,
   SessionTracer,
 } from "./sink.js";
-
-export const RUST_TELEMETRY_REFERENCE = "crates/telemetry/src/lib.rs";
