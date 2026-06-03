@@ -221,7 +221,6 @@ if (doctorMode) {
   console.log(app.plugins.list()[0]?.validate() ?? false ? "plugin valid: true" : "plugin valid: false");
   console.log(report.serverDescription);
   console.log(report.lspSummary);
-  console.log(`rust anchor: ${report.rustAnchor}`);
   console.log(`turns: ${report.turnCount}`);
   console.log(commandReply);
   console.log(firstReply);

@@ -103,7 +103,6 @@ export class StarterSystemApplication {
       pluginCount: this.plugins.list().length,
       serverDescription: this.server.describe(),
       lspSummary: this.lsp.summary(),
-      rustAnchor: this.paths.emberRuntimeLibRs,
       turnCount: this.runtime.turnCount(),
       handledRequestCount: this.controlSequence.records().length,
       lifecycleState: this.controlSequence.lifecycleState(),

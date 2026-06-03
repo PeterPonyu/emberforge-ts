@@ -5,7 +5,6 @@ export interface StarterSystemReport {
   pluginCount: number;
   serverDescription: string;
   lspSummary: string;
-  rustAnchor: string;
   turnCount: number;
   handledRequestCount: number;
   lifecycleState: string;
