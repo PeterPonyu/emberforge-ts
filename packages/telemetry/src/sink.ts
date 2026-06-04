@@ -11,9 +11,21 @@ export interface TelemetrySink {
   record(event: TelemetryEvent): void;
 }
 
+/**
+ * Emits human-readable telemetry lines. The destination writer is injectable so
+ * callers can route diagnostics off stdout — e.g. one-shot `prompt` mode passes
+ * a stderr writer so stdout carries only the model answer. Defaults to
+ * `console.log` (stdout) for the interactive REPL, preserving prior behavior.
+ */
 export class ConsoleTelemetrySink implements TelemetrySink {
+  private readonly write: (line: string) => void;
+
+  constructor(write: (line: string) => void = (line) => console.log(line)) {
+    this.write = write;
+  }
+
   record(event: TelemetryEvent): void {
-    console.log(`[telemetry] ${event.name}: ${event.details}`);
+    this.write(`[telemetry] ${event.name}: ${event.details}`);
   }
 }
 

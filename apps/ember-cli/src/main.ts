@@ -2,6 +2,7 @@ import { resolveProvider } from "../../../packages/api/src/index.js";
 import { buildDoctorReport, DEFAULT_STARTER_SYSTEM_CONFIG, executeStarterSlashCommand, StarterSystemApplication } from "../../../packages/system/src/index.js";
 import { Repl, SessionStore, newSessionId } from "../../../packages/runtime/src/index.js";
 import type { ConversationMessage, SessionSummary } from "../../../packages/runtime/src/index.js";
+import { ConsoleTelemetrySink } from "../../../packages/telemetry/src/index.js";
 import { parsePromptArgs, runPromptTurn } from "./prompt.js";
 
 /**
@@ -106,7 +107,15 @@ if (promptMode) {
     console.error('[ember] prompt: requires a prompt string, e.g. prompt "hello"');
     process.exit(2);
   }
-  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
+  // One-shot prompt mode: stdout must carry ONLY the model answer, so route
+  // telemetry/diagnostics to stderr via the sink abstraction (no string-stripping).
+  const promptTelemetry = new ConsoleTelemetrySink((line) => process.stderr.write(`${line}\n`));
+  const app = new StarterSystemApplication(
+    DEFAULT_STARTER_SYSTEM_CONFIG,
+    resolveProvider(),
+    [],
+    promptTelemetry,
+  );
   try {
     const rendered = await runPromptTurn(app, parsed.prompt, parsed.output);
     console.log(rendered);

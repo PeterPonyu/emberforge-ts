@@ -1,12 +1,30 @@
 import type { MessageRequest, MessageResponse } from "./types.js";
 import type { Provider } from "./provider.js";
 
+/**
+ * Normalizes an Ollama base URL so both the root form (`http://HOST:PORT`) and
+ * the OpenAI-compat form (`http://HOST:PORT/v1`) resolve to the same native
+ * endpoint root. The provider talks to Ollama's native API (`/api/chat`), so a
+ * trailing `/v1` (the OpenAI-compatibility path) must be stripped before the
+ * native path is appended — otherwise `.../v1/api/chat` 404s. Idempotent and
+ * host/port-agnostic: trailing slashes and at most one trailing `/v1` segment
+ * are removed, leaving any other path untouched.
+ */
+export function normalizeOllamaBaseURL(raw: string): string {
+  let base = raw.trim().replace(/\/+$/, "");
+  if (/\/v1$/i.test(base)) {
+    base = base.slice(0, -"/v1".length).replace(/\/+$/, "");
+  }
+  return base;
+}
+
 export class OllamaProvider implements Provider {
   private readonly baseURL: string;
   private readonly model: string;
 
   constructor(baseURL?: string, model?: string) {
-    this.baseURL = baseURL ?? process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+    const resolved = baseURL ?? process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+    this.baseURL = normalizeOllamaBaseURL(resolved);
     this.model = model ?? process.env.OLLAMA_MODEL ?? process.env.EMBER_MODEL ?? "qwen3:8b";
   }
 
