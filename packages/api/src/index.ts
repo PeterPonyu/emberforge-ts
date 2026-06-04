@@ -2,7 +2,7 @@ export type { MessageRequest, MessageResponse } from "./types.js";
 export { DEFAULT_MODEL } from "./provider.js";
 export type { Provider } from "./provider.js";
 export { MockProvider } from "./mock_provider.js";
-export { OllamaProvider } from "./ollama_provider.js";
+export { OllamaProvider, normalizeOllamaBaseURL } from "./ollama_provider.js";
 export { AnthropicProvider, DEFAULT_ANTHROPIC_BASE_URL } from "./anthropic_provider.js";
 export type { AnthropicProviderOptions } from "./anthropic_provider.js";
 export { XaiProvider, DEFAULT_XAI_BASE_URL } from "./xai_provider.js";
