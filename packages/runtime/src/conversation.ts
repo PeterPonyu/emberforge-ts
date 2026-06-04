@@ -1,5 +1,5 @@
 import {
-  buildSystemPrompt,
+  buildAgentSystemPrompt,
   DEFAULT_MODEL,
   type ChatMessage,
   type Provider,
@@ -122,7 +122,7 @@ export class ConversationRuntime {
     const model = this.getActiveModel();
     const tools = buildToolDefinitions(this.toolRegistry!);
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildAgentSystemPrompt() },
       { role: "user", content: input },
     ];
 

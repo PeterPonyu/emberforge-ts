@@ -6,10 +6,35 @@ import {
   normalizeOllamaBaseURL,
   maxTokensForModel,
   parseNumPredict,
+  isThinkingModel,
+  shouldShowThinking,
+  ThinkStreamSeparator,
   DEFAULT_OLLAMA_NUM_PREDICT,
   OPUS_OLLAMA_NUM_PREDICT,
 } from "./ollama_provider.js";
+import { listOllamaModels } from "./model_router.js";
 import { SYSTEM_PROMPT_INTRO_MARKER } from "./system_prompt.js";
+
+/** Streams the given NDJSON lines from a one-shot server, returns text result. */
+async function streamLines(
+  model: string,
+  lines: string[],
+): Promise<string> {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/x-ndjson" });
+    for (const line of lines) res.write(`${line}\n`);
+    res.end();
+  });
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, model);
+    const resp = await provider.sendMessage({ model, prompt: "hi" });
+    return resp.text;
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
 
 /** Spins up a one-shot Ollama-like server that captures the request body. */
 async function captureBody(
@@ -180,6 +205,158 @@ test("parseNumPredict accepts positive integers and rejects junk", () => {
   assert.equal(parseNumPredict("-1"), undefined);
   assert.equal(parseNumPredict("abc"), undefined);
   assert.equal(parseNumPredict("12.5"), undefined);
+});
+
+test("isThinkingModel detects the Rust THINKING_FAMILIES", () => {
+  assert.equal(isThinkingModel("qwen3:8b"), true);
+  assert.equal(isThinkingModel("deepseek-r1:7b"), true);
+  assert.equal(isThinkingModel("QWEN3:32B"), true);
+  assert.equal(isThinkingModel("llama3:8b"), false);
+  assert.equal(isThinkingModel("starcoder2"), false);
+});
+
+test("shouldShowThinking reads EMBER_SHOW_THINKING with sane truthiness", () => {
+  assert.equal(shouldShowThinking({}), false);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "" }), false);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "0" }), false);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "false" }), false);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "off" }), false);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "1" }), true);
+  assert.equal(shouldShowThinking({ EMBER_SHOW_THINKING: "true" }), true);
+});
+
+test("ThinkStreamSeparator strips a leading think block split across deltas", () => {
+  const sep = new ThinkStreamSeparator();
+  let answer = "";
+  // The <think> block and its close are split across chunk boundaries.
+  answer += sep.pushContent("<thi");
+  answer += sep.pushContent("nk>reason");
+  answer += sep.pushContent("ing here</thi");
+  answer += sep.pushContent("nk>\nThe answer");
+  answer += sep.pushContent(" is 42.");
+  answer += sep.finish();
+  assert.equal(answer, "The answer is 42.");
+  assert.equal(sep.thinkingText, "reasoning here");
+});
+
+test("ThinkStreamSeparator leaves content without a leading think block untouched", () => {
+  const sep = new ThinkStreamSeparator();
+  let answer = "";
+  answer += sep.pushContent("Hello, ");
+  answer += sep.pushContent("a <think> later is fine.");
+  answer += sep.finish();
+  assert.equal(answer, "Hello, a <think> later is fine.");
+  assert.equal(sep.thinkingText, "");
+});
+
+test("OllamaProvider strips an inline leading <think> block from the answer", async () => {
+  const text = await streamLines("llama3:8b", [
+    `{"model":"llama3:8b","message":{"role":"assistant","content":"<think>I should greet."},"done":false}`,
+    `{"model":"llama3:8b","message":{"role":"assistant","content":"</think>Hello!"},"done":false}`,
+    `{"model":"llama3:8b","done":true}`,
+  ]);
+  // stdout/answer must NOT contain the reasoning or any <think> tags.
+  assert.equal(text, "Hello!");
+  assert.ok(!text.includes("<think>"));
+  assert.ok(!text.includes("I should greet"));
+});
+
+test("OllamaProvider separates the structured message.thinking channel", async () => {
+  const text = await streamLines("qwen3:8b", [
+    `{"model":"qwen3:8b","message":{"role":"assistant","thinking":"deliberating"},"done":false}`,
+    `{"model":"qwen3:8b","message":{"role":"assistant","content":"Final answer."},"done":false}`,
+    `{"model":"qwen3:8b","done":true}`,
+  ]);
+  assert.equal(text, "Final answer.");
+  assert.ok(!text.includes("deliberating"));
+});
+
+test("OllamaProvider requests structured think mode for thinking-family models", async () => {
+  const body = await captureBody(async (port) => {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "qwen3:8b");
+    await provider.sendMessage({ model: "qwen3:8b", prompt: "hi" });
+  });
+  assert.equal(body.think, true);
+});
+
+test("OllamaProvider does not request think mode for non-thinking models", async () => {
+  const body = await captureBody(async (port) => {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "llama3:8b");
+    await provider.sendMessage({ model: "llama3:8b", prompt: "hi" });
+  });
+  assert.equal(body.think, undefined);
+});
+
+test("EMBER_SHOW_THINKING off hides reasoning; on reveals it on stderr", async () => {
+  const lines = [
+    `{"model":"llama3:8b","message":{"role":"assistant","content":"<think>secret reasoning</think>Done."},"done":false}`,
+    `{"model":"llama3:8b","done":true}`,
+  ];
+  const prev = process.env.EMBER_SHOW_THINKING;
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  let captured = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr as any).write = (chunk: unknown): boolean => {
+    captured += String(chunk);
+    return true;
+  };
+  try {
+    // Default OFF: nothing about reasoning on stderr; answer is clean.
+    delete process.env.EMBER_SHOW_THINKING;
+    const off = await streamLines("llama3:8b", lines);
+    assert.equal(off, "Done.");
+    assert.ok(!captured.includes("secret reasoning"));
+
+    // Toggled ON: reasoning surfaces on stderr, answer still clean on return.
+    captured = "";
+    process.env.EMBER_SHOW_THINKING = "1";
+    const on = await streamLines("llama3:8b", lines);
+    assert.equal(on, "Done.");
+    assert.ok(captured.includes("secret reasoning"));
+  } finally {
+    (process.stderr as { write: typeof originalWrite }).write = originalWrite;
+    if (prev === undefined) delete process.env.EMBER_SHOW_THINKING;
+    else process.env.EMBER_SHOW_THINKING = prev;
+  }
+});
+
+test("listOllamaModels parses an Ollama /api/tags fixture (sorted + deduped)", async () => {
+  const server = http.createServer((req, res) => {
+    assert.equal(req.url, "/api/tags");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        models: [
+          { name: "qwen3:8b" },
+          { name: "llama3:8b" },
+          { name: "qwen3:8b" },
+          { name: "qwen2.5:1.5b" },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const models = await listOllamaModels(`http://127.0.0.1:${port}`);
+    assert.deepEqual(models, ["llama3:8b", "qwen2.5:1.5b", "qwen3:8b"]);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("listOllamaModels throws on a non-200 /api/tags response", async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(503);
+    res.end();
+  });
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    await assert.rejects(() => listOllamaModels(`http://127.0.0.1:${port}`), /HTTP 503/);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
 });
 
 test("OllamaProvider prefers request.model over constructor default", async () => {

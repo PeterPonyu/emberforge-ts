@@ -1,3 +1,4 @@
+import { detectProviderKind, type EnvMap } from "../../api/src/index.js";
 import type { StarterSystemReport } from "./report.js";
 
 export interface DoctorEnvironment {
@@ -5,6 +6,7 @@ export interface DoctorEnvironment {
   OLLAMA_MODEL?: string;
   EMBER_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_AUTH_TOKEN?: string;
   XAI_API_KEY?: string;
 }
 
@@ -18,10 +20,14 @@ export function buildDoctorReport(
 ): string {
   const model = env.OLLAMA_MODEL ?? env.EMBER_MODEL ?? "qwen3:8b";
   const baseUrl = env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  // Reflect the LIVE resolved provider (same credential precedence the router
+  // uses to pick a provider) instead of a hardcoded constant: an Anthropic key
+  // → anthropic, an xAI key → xai, otherwise the local Ollama default.
+  const provider = detectProviderKind(env as EnvMap);
 
   return [
     "emberforge-ts doctor",
-    `provider: ollama`,
+    `provider: ${provider}`,
     `base_url: ${baseUrl}`,
     `model: ${model}`,
     `anthropic_api_key: ${presence(env.ANTHROPIC_API_KEY)}`,

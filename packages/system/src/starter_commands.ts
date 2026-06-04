@@ -1,7 +1,60 @@
+import {
+  discoverAvailableModels,
+  parseStrategy,
+  renderAvailableModelsReport,
+  type AvailableModelCatalog,
+} from "../../api/src/index.js";
 import type { StarterSystemApplication } from "./application.js";
 import { executeBuddyCommand } from "./buddy.js";
 import { buildDoctorReport } from "./doctor.js";
 import type { StarterQuestionRecord, StarterTaskRecord } from "./task_question_state.js";
+
+/** Model sub-command keywords that request the available-model listing. */
+const MODEL_LIST_KEYWORDS = new Set(["list", "ls", "available", "models"]);
+
+/**
+ * Handles `/model …`, mirroring the Rust reference's `set_model`:
+ * - no argument → report the current active model
+ * - `list`/`ls`/`available`/`models` → query Ollama `/api/tags` and render the
+ *   available-model report (async; degrades gracefully when unreachable)
+ * - `auto`/`hybrid` → apply the routing strategy and switch the active model
+ * - `<name>` → switch the active model for subsequent turns
+ */
+function executeModelCommand(
+  app: StarterSystemApplication,
+  payload: string,
+): string | Promise<string> {
+  const current = app.runtime.getActiveModel();
+  const trimmed = payload.trim();
+
+  if (trimmed === "") {
+    return `[command] model: ${current}`;
+  }
+
+  if (MODEL_LIST_KEYWORDS.has(trimmed.toLowerCase())) {
+    const baseUrl = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+    return discoverAvailableModels(current, baseUrl).then((catalog: AvailableModelCatalog) =>
+      [`[command] model list`, renderAvailableModelsReport(current, catalog)].join("\n"),
+    );
+  }
+
+  const strategy = parseStrategy(trimmed);
+  if (strategy.kind === "auto") {
+    const model = app.runtime.setActiveModel(strategy.capableModel);
+    return [
+      `[command] model auto: simple -> ${strategy.fastModel}, complex -> ${strategy.capableModel}`,
+      `[command] model: switched to ${model}`,
+    ].join("\n");
+  }
+  if (strategy.kind === "hybrid") {
+    const model = app.runtime.setActiveModel(strategy.localModel);
+    return [
+      `[command] model hybrid: local -> ${strategy.localModel}, cloud -> ${strategy.cloudModel}`,
+      `[command] model: switched to ${model}`,
+    ].join("\n");
+  }
+  return `[command] model: switched to ${app.runtime.setActiveModel(strategy.model)}`;
+}
 
 function renderHelp(app: StarterSystemApplication): string {
   const lines = ["available commands:"];
@@ -131,7 +184,10 @@ function executeQuestionsCommand(app: StarterSystemApplication, payload: string)
   }
 }
 
-export function executeStarterSlashCommand(app: StarterSystemApplication, input: string): string | null {
+export function executeStarterSlashCommand(
+  app: StarterSystemApplication,
+  input: string,
+): string | Promise<string> | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) return null;
 
@@ -159,15 +215,8 @@ export function executeStarterSlashCommand(app: StarterSystemApplication, input:
         ].join("\n");
       }
       return `[command] doctor: unsupported mode ${payload}`;
-    case "model": {
-      if (payload === "list") {
-        return `[command] model list: ${app.runtime.getActiveModel()}`;
-      }
-      if (payload === "") {
-        return `[command] model: ${app.runtime.getActiveModel()}`;
-      }
-      return `[command] model: switched to ${app.runtime.setActiveModel(payload)}`;
-    }
+    case "model":
+      return executeModelCommand(app, payload);
     case "questions":
       return executeQuestionsCommand(app, payload);
     case "tasks":

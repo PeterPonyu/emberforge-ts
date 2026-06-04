@@ -1,4 +1,7 @@
 import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 /**
  * Canonical agent system prompt, ported for parity with the Rust reference
@@ -12,13 +15,10 @@ import os from "node:os";
  * family, cwd, OS, date) is derived dynamically or named as a constant.
  *
  * PORTED (full parity): the five static sections + the cheap environment
- * section (model family, cwd, date, platform).
- *
- * DEFERRED (documented follow-up, NOT faked here): the heavier dynamic context
- * the Rust builder also assembles — git status/diff snapshots, EMBER.md/CLAW.md
- * instruction-file discovery with truncation budgets, and the runtime-config
- * rendering section. This port does not yet load those, so it does not claim
- * full dynamic-context parity.
+ * section (model family, cwd, date, platform) + the heavier DYNAMIC context the
+ * Rust builder assembles after the boundary — git status/diff snapshots,
+ * EMBER.md/CLAW.md instruction-file discovery with named truncation budgets, and
+ * the runtime-config (settings files) rendering section.
  */
 
 /**
@@ -112,13 +112,339 @@ export function renderEnvironmentSection(env: EnvironmentContext = {}): string {
 }
 
 /**
+ * Per-instruction-file character budget, mirroring Rust's
+ * `MAX_INSTRUCTION_FILE_CHARS` (`crates/runtime/src/prompt.rs:40`). Named, not a
+ * buried literal: any single EMBER.md/CLAW.md file is truncated to this many
+ * characters before rendering.
+ */
+export const MAX_INSTRUCTION_FILE_CHARS = 4_000;
+
+/**
+ * Total instruction-file character budget across all discovered files,
+ * mirroring Rust's `MAX_TOTAL_INSTRUCTION_CHARS` (`prompt.rs:41`). Once consumed,
+ * remaining files are omitted with a budget notice.
+ */
+export const MAX_TOTAL_INSTRUCTION_CHARS = 12_000;
+
+/**
+ * Instruction-file candidates probed in each ancestor directory, in priority
+ * order, mirroring Rust's `discover_instruction_files` (`prompt.rs:219-228`):
+ * Emberforge files first, then the legacy Claw equivalents.
+ */
+export const INSTRUCTION_FILE_CANDIDATES = [
+  "EMBER.md",
+  "EMBER.local.md",
+  path.join(".ember", "EMBER.md"),
+  path.join(".ember", "instructions.md"),
+  "CLAW.md",
+  "CLAW.local.md",
+  path.join(".claw", "CLAW.md"),
+  path.join(".claw", "instructions.md"),
+] as const;
+
+/**
+ * Settings-file candidates probed in each ancestor directory for the runtime
+ * config section, mirroring the Rust `ConfigLoader` which loads project
+ * `.ember`/`.claw` settings. Named, not buried.
+ */
+export const CONFIG_FILE_CANDIDATES = [
+  path.join(".ember", "settings.json"),
+  path.join(".claw", "settings.json"),
+] as const;
+
+/** A discovered instruction file: its path and full (untruncated) content. */
+export interface ContextFile {
+  path: string;
+  content: string;
+}
+
+/** A discovered settings file feeding the runtime-config section. */
+export interface ConfigFile {
+  path: string;
+  content: string;
+}
+
+/**
+ * Dynamic project context assembled per turn, mirroring Rust's `ProjectContext`
+ * plus the config files the `ConfigLoader` would surface. All fields degrade
+ * gracefully: absent git / no instruction files simply omit their sections.
+ */
+export interface ProjectContext {
+  cwd: string;
+  currentDate: string;
+  gitStatus?: string;
+  gitDiff?: string;
+  instructionFiles: ContextFile[];
+  configFiles: ConfigFile[];
+}
+
+/** Ancestor directory chain for `cwd`, root-first (mirrors Rust's reversed walk). */
+function ancestorDirectories(cwd: string): string[] {
+  const directories: string[] = [];
+  let cursor = path.resolve(cwd);
+  // Walk up to the filesystem root, collecting each directory once.
+  for (;;) {
+    directories.push(cursor);
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  directories.reverse();
+  return directories;
+}
+
+/** Reads a file, returning its content only when present and non-blank. */
+function readContextFile(filePath: string): string | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    // Missing/unreadable files degrade gracefully (mirrors Rust's NotFound arm).
+    return null;
+  }
+  return content.trim() === "" ? null : content;
+}
+
+/**
+ * Collapses runs of blank lines to a single blank line, mirroring Rust's
+ * `collapse_blank_lines`. Used to normalize content before dedup hashing.
+ */
+function collapseBlankLines(content: string): string {
+  const result: string[] = [];
+  let previousBlank = false;
+  for (const line of content.split("\n")) {
+    const isBlank = line.trim() === "";
+    if (isBlank && previousBlank) continue;
+    result.push(line.replace(/\s+$/, ""));
+    previousBlank = isBlank;
+  }
+  return result.join("\n");
+}
+
+/** Normalizes instruction content for dedup, mirroring Rust's normalize. */
+function normalizeInstructionContent(content: string): string {
+  return collapseBlankLines(content).trim();
+}
+
+/**
+ * Drops later instruction files whose normalized content duplicates an earlier
+ * one, mirroring Rust's `dedupe_instruction_files` (same rules nested up the
+ * ancestor chain shouldn't render twice).
+ */
+function dedupeInstructionFiles(files: ContextFile[]): ContextFile[] {
+  const seen = new Set<string>();
+  const deduped: ContextFile[] = [];
+  for (const file of files) {
+    const normalized = normalizeInstructionContent(file.content);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(file);
+  }
+  return deduped;
+}
+
+/**
+ * Discovers EMBER.md/CLAW.md-family instruction files up the ancestor chain,
+ * mirroring Rust's `discover_instruction_files`: each ancestor directory is
+ * probed for every candidate (Emberforge first, Claw fallback), root-first, then
+ * duplicates are removed by normalized content.
+ */
+export function discoverInstructionFiles(cwd: string): ContextFile[] {
+  const files: ContextFile[] = [];
+  for (const dir of ancestorDirectories(cwd)) {
+    for (const candidate of INSTRUCTION_FILE_CANDIDATES) {
+      const filePath = path.join(dir, candidate);
+      const content = readContextFile(filePath);
+      if (content !== null) {
+        files.push({ path: filePath, content });
+      }
+    }
+  }
+  return dedupeInstructionFiles(files);
+}
+
+/** Discovers `.ember`/`.claw` settings files up the ancestor chain. */
+export function discoverConfigFiles(cwd: string): ConfigFile[] {
+  const files: ConfigFile[] = [];
+  for (const dir of ancestorDirectories(cwd)) {
+    for (const candidate of CONFIG_FILE_CANDIDATES) {
+      const filePath = path.join(dir, candidate);
+      const content = readContextFile(filePath);
+      if (content !== null) {
+        files.push({ path: filePath, content });
+      }
+    }
+  }
+  return files;
+}
+
+/** Runs a git subcommand in `cwd`, returning trimmed stdout or null on any failure. */
+function readGitOutput(cwd: string, args: string[]): string | null {
+  try {
+    const stdout = execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return stdout;
+  } catch {
+    // Not a repo, git absent, or command failed → degrade gracefully.
+    return null;
+  }
+}
+
+/**
+ * Reads `git --no-optional-locks status --short --branch`, mirroring Rust's
+ * `read_git_status`. Returns null when not a repo / git absent / empty.
+ */
+export function readGitStatus(cwd: string): string | undefined {
+  const stdout = readGitOutput(cwd, ["--no-optional-locks", "status", "--short", "--branch"]);
+  if (stdout === null) return undefined;
+  const trimmed = stdout.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * Reads staged + unstaged diffs, mirroring Rust's `read_git_diff`. Returns
+ * undefined when there are no changes / not a repo.
+ */
+export function readGitDiff(cwd: string): string | undefined {
+  const sections: string[] = [];
+  const staged = readGitOutput(cwd, ["diff", "--cached"]);
+  if (staged !== null && staged.trim() !== "") {
+    sections.push(`Staged changes:\n${staged.replace(/\s+$/, "")}`);
+  }
+  const unstaged = readGitOutput(cwd, ["diff"]);
+  if (unstaged !== null && unstaged.trim() !== "") {
+    sections.push(`Unstaged changes:\n${unstaged.replace(/\s+$/, "")}`);
+  }
+  return sections.length === 0 ? undefined : sections.join("\n\n");
+}
+
+/**
+ * Discovers the dynamic project context (instruction files + settings files) for
+ * `cwd`, mirroring Rust's `ProjectContext::discover`. Does NOT shell out to git.
+ */
+export function discoverProjectContext(
+  cwd: string = process.cwd(),
+  currentDate: string = new Date().toISOString().slice(0, 10),
+): ProjectContext {
+  return {
+    cwd,
+    currentDate,
+    instructionFiles: discoverInstructionFiles(cwd),
+    configFiles: discoverConfigFiles(cwd),
+  };
+}
+
+/**
+ * Like {@link discoverProjectContext} but also captures the git status + diff
+ * snapshot, mirroring Rust's `ProjectContext::discover_with_git`. Git failures
+ * degrade gracefully (fields stay undefined).
+ */
+export function discoverProjectContextWithGit(
+  cwd: string = process.cwd(),
+  currentDate: string = new Date().toISOString().slice(0, 10),
+): ProjectContext {
+  const context = discoverProjectContext(cwd, currentDate);
+  context.gitStatus = readGitStatus(cwd);
+  context.gitDiff = readGitDiff(cwd);
+  return context;
+}
+
+/** Compact display name for an instruction file (basename), mirroring Rust. */
+function displayContextPath(filePath: string): string {
+  return path.basename(filePath) || filePath;
+}
+
+/** Truncates instruction content to the budget, appending a marker, like Rust. */
+function truncateInstructionContent(content: string, remainingChars: number): string {
+  const hardLimit = Math.min(MAX_INSTRUCTION_FILE_CHARS, remainingChars);
+  const trimmed = content.trim();
+  const chars = [...trimmed];
+  if (chars.length <= hardLimit) {
+    return trimmed;
+  }
+  return `${chars.slice(0, hardLimit).join("")}\n\n[truncated]`;
+}
+
+/**
+ * Renders the discovered instruction files into the `# Emberforge instructions`
+ * section, honoring the per-file and total character budgets, mirroring Rust's
+ * `render_instruction_files`.
+ */
+export function renderInstructionFiles(files: ContextFile[]): string {
+  const sections = ["# Emberforge instructions"];
+  let remaining = MAX_TOTAL_INSTRUCTION_CHARS;
+  for (const file of files) {
+    if (remaining === 0) {
+      sections.push("_Additional instruction content omitted after reaching the prompt budget._");
+      break;
+    }
+    const rendered = truncateInstructionContent(file.content, remaining);
+    const consumed = Math.min([...rendered].length, remaining);
+    remaining -= consumed;
+    sections.push(`## ${displayContextPath(file.path)}`);
+    sections.push(rendered);
+  }
+  return sections.join("\n\n");
+}
+
+/** Renders the `# Project context` section (date, cwd, git snapshots), like Rust. */
+export function renderProjectContext(context: ProjectContext): string {
+  const lines = ["# Project context"];
+  const bullets = [
+    `Today's date is ${context.currentDate}.`,
+    `Working directory: ${context.cwd}`,
+  ];
+  if (context.instructionFiles.length > 0) {
+    bullets.push(`Emberforge instruction files discovered: ${context.instructionFiles.length}.`);
+  }
+  lines.push(...bullets.map((bullet) => ` - ${bullet}`));
+  if (context.gitStatus) {
+    lines.push("", "Git status snapshot:", context.gitStatus);
+  }
+  if (context.gitDiff) {
+    lines.push("", "Git diff snapshot:", context.gitDiff);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Renders the `# Runtime config` section from discovered settings files,
+ * mirroring the intent of Rust's `render_config_section` (loaded entries, then
+ * their content). Empty discovery yields the "no settings loaded" note.
+ */
+export function renderConfigSection(configFiles: ConfigFile[]): string {
+  const lines = ["# Runtime config"];
+  if (configFiles.length === 0) {
+    lines.push(" - No Emberforge settings files loaded.");
+    return lines.join("\n");
+  }
+  lines.push(...configFiles.map((file) => ` - Loaded settings: ${file.path}`));
+  for (const file of configFiles) {
+    lines.push("", truncateInstructionContent(file.content, MAX_INSTRUCTION_FILE_CHARS));
+  }
+  return lines.join("\n");
+}
+
+/** Options for {@link buildSystemPrompt}: cheap env plus optional dynamic context. */
+export interface BuildSystemPromptOptions extends EnvironmentContext {
+  /** Pre-discovered project context injected after the dynamic boundary. */
+  projectContext?: ProjectContext;
+}
+
+/**
  * Assembles the full canonical system prompt: the five static sections in the
  * same order as Rust's builder, then the dynamic boundary, then the cheap
- * environment section. Sections are joined with a blank line, matching Rust's
- * `build().join("\n\n")`.
+ * environment section, then — when a {@link ProjectContext} is supplied — the
+ * dynamic project-context, instruction-file, and runtime-config sections (all
+ * AFTER the boundary, mirroring Rust's `SystemPromptBuilder::build`). Sections
+ * are joined with a blank line, matching Rust's `build().join("\n\n")`.
  */
-export function buildSystemPrompt(env: EnvironmentContext = {}): string {
-  return [
+export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
+  const { projectContext, ...env } = options;
+  const sections = [
     INTRO_SECTION,
     SYSTEM_SECTION,
     DOING_TASKS_SECTION,
@@ -126,5 +452,29 @@ export function buildSystemPrompt(env: EnvironmentContext = {}): string {
     ACTIONS_SECTION,
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     renderEnvironmentSection(env),
-  ].join("\n\n");
+  ];
+  if (projectContext) {
+    sections.push(renderProjectContext(projectContext));
+    if (projectContext.instructionFiles.length > 0) {
+      sections.push(renderInstructionFiles(projectContext.instructionFiles));
+    }
+    sections.push(renderConfigSection(projectContext.configFiles));
+  }
+  return sections.join("\n\n");
+}
+
+/**
+ * Convenience builder used by the live agent paths (provider + runtime): it
+ * discovers the dynamic project context (instruction files + git snapshot +
+ * settings) for `cwd` and assembles the full prompt, so every turn carries fresh
+ * git state and project instructions — the parity behavior Rust gets from
+ * `load_system_prompt`.
+ */
+export function buildAgentSystemPrompt(cwd: string = process.cwd()): string {
+  const projectContext = discoverProjectContextWithGit(cwd);
+  return buildSystemPrompt({
+    cwd,
+    date: projectContext.currentDate,
+    projectContext,
+  });
 }
