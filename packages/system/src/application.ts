@@ -52,7 +52,10 @@ export class StarterSystemApplication {
     this.telemetry = telemetry ?? new ConsoleTelemetrySink();
     this.provider = provider ?? new MockProvider();
     this.mcp = new McpClient(mcpServers);
-    this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry);
+    this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry, {
+      toolDispatcher: this.toolDispatcher,
+      toolRegistry: this.tools,
+    });
     this.controlSequence = new ControlSequenceEngine(
       this.runtime,
       this.commands,

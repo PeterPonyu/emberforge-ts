@@ -1,4 +1,11 @@
-import type { MessageRequest, MessageResponse } from "./types.js";
+import type {
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  MessageRequest,
+  MessageResponse,
+  ToolCall,
+} from "./types.js";
 import type { Provider } from "./provider.js";
 import { buildSystemPrompt } from "./system_prompt.js";
 
@@ -127,4 +134,126 @@ export class OllamaProvider implements Provider {
 
     return { text };
   }
+
+  /**
+   * Agentic chat turn using Ollama's NATIVE tool-calling. Sends the supplied
+   * conversation `messages` and the available tool specs as the `tools` array on
+   * `/api/chat`, streams assistant text deltas (surfaced via `request.onText`),
+   * and collects any structured `message.tool_calls` from the response. The
+   * runtime drives the multi-turn loop; this method returns one turn's text +
+   * tool calls. Mirrors the Rust reference's structured `ApiRequest` → assistant
+   * message (`crates/runtime/src/conversation.rs`).
+   */
+  async chat(request: ChatRequest): Promise<ChatResponse> {
+    const effectiveModel = request.model || this.model;
+    const numPredict = this.numPredict ?? maxTokensForModel(effectiveModel);
+
+    const body: Record<string, unknown> = {
+      model: effectiveModel,
+      messages: request.messages.map(toOllamaMessage),
+      stream: true,
+      options: { num_predict: numPredict },
+    };
+    // Reuse the existing tool registry specs verbatim (no hardcoded schemas):
+    // map each into Ollama's native function-tool shape.
+    if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        },
+      }));
+    }
+
+    const response = await fetch(`${this.baseURL}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Ollama HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let text = "";
+    const toolCalls: ToolCall[] = [];
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        const obj = JSON.parse(line) as OllamaChatChunk;
+        const delta = obj.message?.content;
+        if (delta) {
+          text += delta;
+          request.onText?.(delta);
+        }
+        // Tool calls arrive in the aggregated message (one chunk before/at
+        // `done`); collect them from any chunk that carries them.
+        for (const raw of obj.message?.tool_calls ?? []) {
+          const name = raw.function?.name;
+          if (name) {
+            toolCalls.push({ name, arguments: normalizeToolArguments(raw.function?.arguments) });
+          }
+        }
+      }
+    }
+
+    return { text, toolCalls };
+  }
+}
+
+/** Ollama `/api/chat` NDJSON chunk shape (the fields this provider reads). */
+interface OllamaChatChunk {
+  message?: {
+    content?: string;
+    tool_calls?: Array<{
+      function?: { name?: string; arguments?: unknown };
+    }>;
+  };
+  done?: boolean;
+}
+
+/** Serialize an internal {@link ChatMessage} to Ollama's wire message shape. */
+function toOllamaMessage(message: ChatMessage): Record<string, unknown> {
+  const wire: Record<string, unknown> = { role: message.role, content: message.content };
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    wire.tool_calls = message.tool_calls.map((call) => ({
+      function: { name: call.name, arguments: call.arguments },
+    }));
+  }
+  if (message.tool_name) {
+    wire.tool_name = message.tool_name;
+  }
+  return wire;
+}
+
+/**
+ * Normalize Ollama's tool-call `arguments` into a plain object. The native API
+ * returns an object, but some builds return a JSON string; tolerate both and
+ * degrade to an empty object on malformed input.
+ */
+function normalizeToolArguments(raw: unknown): Record<string, unknown> {
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (raw && typeof raw === "object") {
+    return raw as Record<string, unknown>;
+  }
+  return {};
 }

@@ -117,8 +117,18 @@ if (promptMode) {
     promptTelemetry,
   );
   try {
+    // Stream assistant text deltas to stdout as they arrive (text mode only).
+    // JSON mode needs the whole structured record, so it stays buffered.
+    if (parsed.output === "text") {
+      app.runtime.onText = (delta) => process.stdout.write(delta);
+    }
     const rendered = await runPromptTurn(app, parsed.prompt, parsed.output);
-    console.log(rendered);
+    if (parsed.output === "json") {
+      console.log(rendered);
+    } else {
+      // Content already streamed via onText; terminate the line.
+      process.stdout.write("\n");
+    }
     app.shutdown();
     process.exit(0);
   } catch (err: unknown) {
@@ -204,6 +214,9 @@ if (promptMode) {
     return `[ember] resumed session ${sessionId} (${loaded.messages.length} messages)`;
   };
 
+  // Stream assistant text deltas to stdout live during agentic turns.
+  app.runtime.onText = (delta) => process.stdout.write(delta);
+
   const repl = new Repl({
     prompt: "ember> ",
     onInput: async (line: string): Promise<string> => {
@@ -219,7 +232,9 @@ if (promptMode) {
 
       const record = await app.controlSequence.handle(line);
       await persist({ role: "assistant", content: record.output, timestamp: new Date().toISOString() });
-      return record.output;
+      // The answer already streamed to stdout via onText; return empty so the
+      // REPL only appends the terminating newline (no duplicate print).
+      return "";
     },
     onExit: (): void => {
       app.shutdown();
