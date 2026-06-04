@@ -18,3 +18,16 @@ export { globalFetch } from "./transport.js";
 export type { FetchLike, FetchResponse } from "./transport.js";
 export { detectProviderKind, resolveProvider } from "./router.js";
 export type { ProviderKind, ProviderSettings, RouterOptions } from "./router.js";
+export {
+  buildSystemPrompt,
+  renderEnvironmentSection,
+  FRONTIER_MODEL_NAME,
+  SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+  SYSTEM_PROMPT_INTRO_MARKER,
+  INTRO_SECTION,
+  SYSTEM_SECTION,
+  DOING_TASKS_SECTION,
+  TOOL_USAGE_SECTION,
+  ACTIONS_SECTION,
+} from "./system_prompt.js";
+export type { EnvironmentContext } from "./system_prompt.js";
