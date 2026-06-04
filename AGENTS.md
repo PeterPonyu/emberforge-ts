@@ -89,6 +89,7 @@ the unit tests use it directly. It is not auto-selected by the CLI.
 | `XAI_API_KEY` | xAI API key (bearer); routes to xAI when no Anthropic cred |
 | `OLLAMA_BASE_URL` | Ollama endpoint (default `http://localhost:11434`) |
 | `OLLAMA_MODEL` | Ollama model (default `qwen3:8b`) |
+| `OLLAMA_NUM_PREDICT` | Max output tokens (`options.num_predict`) bounding runaway generation; positive int, default generous model-aware bound (`64000`, `32000` opus) |
 | `EMBER_MODEL` | Fallback model when `OLLAMA_MODEL` is unset |
 | `EMBER_CONFIG_HOME` | Config directory (default `~/.emberforge`) |
 | `EMBER_BUDDY_STATE_PATH` | Buddy-state file override |

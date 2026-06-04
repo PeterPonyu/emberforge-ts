@@ -1,7 +1,37 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import http from "node:http";
-import { OllamaProvider, normalizeOllamaBaseURL } from "./ollama_provider.js";
+import {
+  OllamaProvider,
+  normalizeOllamaBaseURL,
+  maxTokensForModel,
+  parseNumPredict,
+  DEFAULT_OLLAMA_NUM_PREDICT,
+  OPUS_OLLAMA_NUM_PREDICT,
+} from "./ollama_provider.js";
+
+/** Spins up a one-shot Ollama-like server that captures the request body. */
+async function captureBody(
+  run: (port: number) => Promise<void>,
+): Promise<Record<string, unknown>> {
+  let captured: Record<string, unknown> = {};
+  const server = http.createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    captured = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    res.writeHead(200, { "content-type": "application/x-ndjson" });
+    res.write(`{"model":"test","done":true}\n`);
+    res.end();
+  });
+  await new Promise<void>((r) => server.listen(0, r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    await run(port);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+  return captured;
+}
 
 test("normalizeOllamaBaseURL strips a trailing /v1 and is idempotent", () => {
   // Root form is unchanged.
@@ -78,6 +108,58 @@ test("OllamaProvider throws on non-200 response", async () => {
     /Ollama HTTP 500/,
   );
   await new Promise<void>((r) => server.close(() => r()));
+});
+
+test("OllamaProvider sends a bounded options.num_predict by default", async () => {
+  const body = await captureBody(async (port) => {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "qwen3:8b");
+    await provider.sendMessage({ model: "qwen3:8b", prompt: "hi" });
+  });
+  const options = body.options as { num_predict?: unknown } | undefined;
+  assert.ok(options, "request body must carry an options object");
+  // Generous model-aware default mirroring the Rust reference (64_000 non-opus).
+  assert.equal(options?.num_predict, DEFAULT_OLLAMA_NUM_PREDICT);
+});
+
+test("OllamaProvider honors an explicit constructor num_predict override", async () => {
+  const body = await captureBody(async (port) => {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "qwen3:8b", 256);
+    await provider.sendMessage({ model: "qwen3:8b", prompt: "hi" });
+  });
+  const options = body.options as { num_predict?: unknown };
+  assert.equal(options.num_predict, 256);
+});
+
+test("OllamaProvider reads num_predict from OLLAMA_NUM_PREDICT env var", async () => {
+  const prev = process.env.OLLAMA_NUM_PREDICT;
+  process.env.OLLAMA_NUM_PREDICT = "1234";
+  try {
+    const body = await captureBody(async (port) => {
+      const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "qwen3:8b");
+      await provider.sendMessage({ model: "qwen3:8b", prompt: "hi" });
+    });
+    const options = body.options as { num_predict?: unknown };
+    assert.equal(options.num_predict, 1234);
+  } finally {
+    if (prev === undefined) delete process.env.OLLAMA_NUM_PREDICT;
+    else process.env.OLLAMA_NUM_PREDICT = prev;
+  }
+});
+
+test("maxTokensForModel mirrors the Rust reference's opus/default split", () => {
+  assert.equal(maxTokensForModel("qwen3:32b"), DEFAULT_OLLAMA_NUM_PREDICT);
+  assert.equal(maxTokensForModel("claude-opus-4-6"), OPUS_OLLAMA_NUM_PREDICT);
+});
+
+test("parseNumPredict accepts positive integers and rejects junk", () => {
+  assert.equal(parseNumPredict("2048"), 2048);
+  assert.equal(parseNumPredict(undefined), undefined);
+  assert.equal(parseNumPredict(""), undefined);
+  assert.equal(parseNumPredict("  "), undefined);
+  assert.equal(parseNumPredict("0"), undefined);
+  assert.equal(parseNumPredict("-1"), undefined);
+  assert.equal(parseNumPredict("abc"), undefined);
+  assert.equal(parseNumPredict("12.5"), undefined);
 });
 
 test("OllamaProvider prefers request.model over constructor default", async () => {

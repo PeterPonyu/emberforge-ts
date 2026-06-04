@@ -148,6 +148,7 @@ Environment variables:
 - `EMBER_TASK_STATE_PATH` — override the task/question-state file location
 - `OLLAMA_BASE_URL` — custom Ollama endpoint (default: `http://localhost:11434`)
 - `OLLAMA_MODEL` — Ollama model to route to (default: `qwen3:8b`)
+- `OLLAMA_NUM_PREDICT` — max output tokens (`options.num_predict`) sent to Ollama, bounding runaway generation from thinking models; positive integer, defaults to a generous model-aware bound (`64000`, `32000` for opus-class) mirroring the Rust reference's `max_tokens_for_model`
 - `ANTHROPIC_API_KEY` — Anthropic API key (`x-api-key`); when set, routes the CLI to the hosted Anthropic provider
 - `ANTHROPIC_AUTH_TOKEN` — Anthropic bearer token (alternative/additional to the API key); also routes to Anthropic
 - `ANTHROPIC_BASE_URL` — override the Anthropic endpoint (default: `https://api.anthropic.com`)
