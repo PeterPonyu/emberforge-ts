@@ -9,6 +9,7 @@ import {
   DEFAULT_OLLAMA_NUM_PREDICT,
   OPUS_OLLAMA_NUM_PREDICT,
 } from "./ollama_provider.js";
+import { SYSTEM_PROMPT_INTRO_MARKER } from "./system_prompt.js";
 
 /** Spins up a one-shot Ollama-like server that captures the request body. */
 async function captureBody(
@@ -144,6 +145,25 @@ test("OllamaProvider reads num_predict from OLLAMA_NUM_PREDICT env var", async (
     if (prev === undefined) delete process.env.OLLAMA_NUM_PREDICT;
     else process.env.OLLAMA_NUM_PREDICT = prev;
   }
+});
+
+test("OllamaProvider prepends a canonical system message before the user message", async () => {
+  const body = await captureBody(async (port) => {
+    const provider = new OllamaProvider(`http://127.0.0.1:${port}`, "qwen3:8b");
+    await provider.sendMessage({ model: "qwen3:8b", prompt: "hi" });
+  });
+  const messages = body.messages as Array<{ role?: string; content?: string }>;
+  assert.ok(Array.isArray(messages), "request body must carry a messages array");
+  // A system message must lead, ahead of the user message (parity framing).
+  assert.equal(messages[0]?.role, "system");
+  assert.equal(messages[1]?.role, "user");
+  assert.equal(messages[1]?.content, "hi");
+  // Its content must contain the stable canonical intro marker line.
+  assert.ok(
+    typeof messages[0]?.content === "string" &&
+      messages[0].content.includes(SYSTEM_PROMPT_INTRO_MARKER),
+    "system message must contain the canonical intro marker",
+  );
 });
 
 test("maxTokensForModel mirrors the Rust reference's opus/default split", () => {

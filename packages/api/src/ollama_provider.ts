@@ -1,5 +1,6 @@
 import type { MessageRequest, MessageResponse } from "./types.js";
 import type { Provider } from "./provider.js";
+import { buildSystemPrompt } from "./system_prompt.js";
 
 /**
  * Normalizes an Ollama base URL so both the root form (`http://HOST:PORT`) and
@@ -88,7 +89,13 @@ export class OllamaProvider implements Provider {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         model: effectiveModel,
-        messages: [{ role: "user", content: request.prompt }],
+        // Prepend the canonical agent system prompt (parity with the Rust
+        // reference) so the model is framed identically across all ports,
+        // ahead of the user message.
+        messages: [
+          { role: "system", content: buildSystemPrompt() },
+          { role: "user", content: request.prompt },
+        ],
         stream: true,
         options: { num_predict: numPredict },
       }),

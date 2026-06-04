@@ -2,6 +2,7 @@ import type { MessageRequest, MessageResponse } from "./types.js";
 import type { Provider } from "./provider.js";
 import { resolveXaiApiKey, type EnvMap, type XaiSettings } from "./auth.js";
 import { globalFetch, type FetchLike } from "./transport.js";
+import { buildSystemPrompt } from "./system_prompt.js";
 
 export const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 
@@ -59,7 +60,12 @@ export class XaiProvider implements Provider {
   buildBody(request: MessageRequest): string {
     return JSON.stringify({
       model: request.model,
-      messages: [{ role: "user", content: request.prompt }],
+      // Prepend the canonical agent system prompt (parity with the Rust
+      // reference) ahead of the user message, for cross-provider consistency.
+      messages: [
+        { role: "system", content: buildSystemPrompt() },
+        { role: "user", content: request.prompt },
+      ],
       stream: false,
     });
   }
