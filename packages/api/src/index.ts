@@ -1,4 +1,12 @@
 export type { MessageRequest, MessageResponse } from "./types.js";
+export type {
+  ChatRole,
+  ToolCall,
+  ChatMessage,
+  ToolDefinition,
+  ChatRequest,
+  ChatResponse,
+} from "./types.js";
 export { DEFAULT_MODEL } from "./provider.js";
 export type { Provider } from "./provider.js";
 export { MockProvider } from "./mock_provider.js";
