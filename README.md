@@ -4,7 +4,15 @@
 
 Emberforge is a terminal coding tool that works with local models through Ollama. It includes a REPL, tool execution, session management, and plugin scaffolding. This repository contains the TypeScript implementation: a single Node.js/TypeScript project whose source is organized into internal `packages/` and `apps/` folders compiled together by one root `tsconfig.json`. It is not an npm workspaces monorepo — there is one root `package.json` and the internal folders are imported by relative path, not as published workspace packages.
 
-> **Status note:** The TypeScript port currently ships two provider backends — a built-in mock provider (for tests/offline use) and the Ollama provider used by the CLI. Hosted providers (Anthropic Claude, xAI Grok) and MCP integration are **planned** and not yet implemented in this port. Sections below mark planned capabilities explicitly.
+> **Status note:** The TypeScript port ships four provider backends — a built-in
+> mock provider (tests/offline), the local Ollama provider, and hosted
+> **Anthropic** and **xAI** providers. The CLI selects a provider automatically
+> by credential detection (`resolveProvider()`): Anthropic when an Anthropic
+> credential is set, else xAI when `XAI_API_KEY` is set, else Ollama. The hosted
+> clients are real HTTP clients (`/v1/messages` for Anthropic, OpenAI-compatible
+> `/chat/completions` for xAI). One caveat: the `doctor` command's printed
+> `provider:` line currently always reads `ollama` — it shows the local default
+> plus hosted-key presence, not the live routing decision.
 
 ## Prerequisites: Ollama
 
@@ -52,7 +60,20 @@ node dist/apps/ember-cli/src/main.js --model qwen3:8b
 
 # Run diagnostics (checks Ollama, env vars, and registered commands/tools)
 node dist/apps/ember-cli/src/main.js doctor
+
+# Direct loop: run ONE non-interactive agent turn and exit
+node dist/apps/ember-cli/src/main.js prompt "summarize the repo layout"
+
+# Structured (single-line JSON) output for scripting/agents
+node dist/apps/ember-cli/src/main.js prompt --output json "list the open tasks"
 ```
+
+The `prompt` subcommand is the non-interactive **direct loop**: it drives a
+single agent turn through the same runtime the REPL uses (model routing + tool
+dispatch), prints the result, and exits. Output defaults to plain text; pass
+`--output json` for a single structured line. It uses the same provider routing
+as the REPL, so a local turn requires a reachable Ollama (or hosted credentials)
+— without one it exits non-zero with `prompt failed: fetch failed`.
 
 > There is no `ember` binary on your `PATH` — the package ships no `bin` entry.
 > Invoke the CLI via `npm start` or `node dist/apps/ember-cli/src/main.js ...`
@@ -62,7 +83,7 @@ node dist/apps/ember-cli/src/main.js doctor
 ## Features
 
 - **Local-first**: Runs with Ollama — no API keys needed for local models
-- **Hosted providers** *(planned)*: Anthropic Claude and xAI Grok routing is not yet implemented in the TypeScript port. The `doctor` command only reports whether `ANTHROPIC_API_KEY` / `XAI_API_KEY` are present in the environment; no hosted provider is wired into the CLI.
+- **Hosted providers**: Anthropic Claude and xAI Grok are implemented as real HTTP clients and selected automatically by credential detection (`resolveProvider()`). Set `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`) to route to Anthropic, or `XAI_API_KEY` to route to xAI; with neither set the CLI uses local Ollama. Note: the `doctor` report's `provider:` line still prints `ollama` regardless of routing (a display limitation).
 - **Task-based model selection**: Selects models by task complexity
 - **Slash commands**: `/help`, `/status`, `/doctor`, `/model`, `/questions`, `/tasks`, `/buddy`, `/compact`, `/review`, `/commit`, `/pr`, and more
 - **Tools**: bash, file ops, search, web, notebooks, agents, skills
@@ -79,7 +100,7 @@ apps/
 └── ember-cli/      Interactive REPL, streaming renderer, slash commands
 
 packages/
-├── api/            API client — Ollama + mock providers (Anthropic/OpenAI-compat routing planned)
+├── api/            API client — Ollama, mock, Anthropic, and xAI providers with credential-based routing
 ├── commands/       Shared slash command definitions and help text
 ├── compat/         Compatibility layer and legacy path resolution
 ├── lsp/            Language Server Protocol integration
@@ -97,10 +118,15 @@ packages/
 | --- | --- | --- | --- |
 | **Ollama** (local) | qwen3, llama3, gemma3, mistral, deepseek-r1, phi4, plus many more local families | None needed | Implemented |
 | **Mock** (built-in) | Deterministic responses for tests/offline use | None needed | Implemented |
-| **Anthropic** | Claude Opus, Sonnet, and Haiku families | `ANTHROPIC_API_KEY` | Planned — not yet implemented |
-| **xAI** | Grok 3, Grok 3 Mini | `XAI_API_KEY` | Planned — not yet implemented |
+| **Anthropic** | Claude Opus, Sonnet, and Haiku families | `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` | Implemented |
+| **xAI** | Grok 3, Grok 3 Mini | `XAI_API_KEY` | Implemented |
 
-> The CLI always constructs the Ollama provider today. The `ANTHROPIC_API_KEY` / `XAI_API_KEY` variables below are only surfaced by the `doctor` command (`node dist/apps/ember-cli/src/main.js doctor`) for diagnostics; they do not yet enable hosted-provider routing.
+> The CLI picks a provider by credential detection at startup
+> (`resolveProvider()` in `packages/api/src/router.ts`): Anthropic if an
+> Anthropic credential is set, else xAI if `XAI_API_KEY` is set, else local
+> Ollama. The `doctor` command additionally surfaces `ANTHROPIC_API_KEY` /
+> `XAI_API_KEY` presence for diagnostics, but its printed `provider:` line is
+> hardcoded to `ollama` and does not reflect the live routing decision.
 
 ## Configuration
 
@@ -122,8 +148,10 @@ Environment variables:
 - `EMBER_TASK_STATE_PATH` — override the task/question-state file location
 - `OLLAMA_BASE_URL` — custom Ollama endpoint (default: `http://localhost:11434`)
 - `OLLAMA_MODEL` — Ollama model to route to (default: `qwen3:8b`)
-- `ANTHROPIC_API_KEY` — Anthropic API credentials *(read by the `doctor` command for diagnostics only; hosted Anthropic routing is planned)*
-- `XAI_API_KEY` — xAI API credentials *(read by the `doctor` command for diagnostics only; hosted xAI routing is planned)*
+- `ANTHROPIC_API_KEY` — Anthropic API key (`x-api-key`); when set, routes the CLI to the hosted Anthropic provider
+- `ANTHROPIC_AUTH_TOKEN` — Anthropic bearer token (alternative/additional to the API key); also routes to Anthropic
+- `ANTHROPIC_BASE_URL` — override the Anthropic endpoint (default: `https://api.anthropic.com`)
+- `XAI_API_KEY` — xAI API key (bearer); when set (and no Anthropic credential), routes the CLI to the hosted xAI provider
 
 ## Project Instructions
 

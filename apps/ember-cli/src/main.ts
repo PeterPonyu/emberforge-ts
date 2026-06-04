@@ -2,6 +2,7 @@ import { resolveProvider } from "../../../packages/api/src/index.js";
 import { buildDoctorReport, DEFAULT_STARTER_SYSTEM_CONFIG, executeStarterSlashCommand, StarterSystemApplication } from "../../../packages/system/src/index.js";
 import { Repl, SessionStore, newSessionId } from "../../../packages/runtime/src/index.js";
 import type { ConversationMessage, SessionSummary } from "../../../packages/runtime/src/index.js";
+import { parsePromptArgs, runPromptTurn } from "./prompt.js";
 
 /**
  * Resolves the `--resume` flag. `--resume <id>` (or `--resume=<id>`) targets a
@@ -89,8 +90,34 @@ if (cliModel) {
 const remainingArgs = stripConsumedCliFlags(process.argv.slice(2));
 const doctorArgs = remainingArgs;
 const doctorMode = doctorArgs[0] === "doctor";
+const promptMode = doctorArgs[0] === "prompt";
 
-if (doctorMode) {
+if (promptMode) {
+  // Direct loop: drive ONE non-interactive agent turn through the existing
+  // runtime and exit, mirroring the Rust reference's `ember prompt "<text>"`.
+  let parsed;
+  try {
+    parsed = parsePromptArgs(doctorArgs.slice(1));
+  } catch (err: unknown) {
+    console.error(`[ember] prompt: ${(err as Error).message}`);
+    process.exit(2);
+  }
+  if (!parsed.prompt) {
+    console.error('[ember] prompt: requires a prompt string, e.g. prompt "hello"');
+    process.exit(2);
+  }
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
+  try {
+    const rendered = await runPromptTurn(app, parsed.prompt, parsed.output);
+    console.log(rendered);
+    app.shutdown();
+    process.exit(0);
+  } catch (err: unknown) {
+    console.error(`[ember] prompt failed: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
+  }
+} else if (doctorMode) {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const doctorSubmode = doctorArgs[1]?.trim();
   if (doctorSubmode === "status") {
