@@ -6,7 +6,7 @@ them) working in the **emberforge-ts** repository. It is intentionally factual t
 
 ## What this repo is
 
-A single Node.js/TypeScript project (Node 20+) compiled by one root
+A single Node.js/TypeScript project (Node 22+) compiled by one root
 `tsconfig.json`. Source lives under `packages/` (internal libraries) and
 `apps/ember-cli/` (the CLI). It is **not** an npm workspaces monorepo: there is
 one root `package.json` and the internal folders are imported by relative path
@@ -104,7 +104,7 @@ npm run typecheck
 
 `npm test` runs the full `node:test` suite (104 tests as of this change),
 including `apps/ember-cli/src/prompt.test.js` for the direct-loop subcommand. CI
-(`.github/workflows/ci.yml`, Node 20 on ubuntu + macos) runs exactly:
+(`.github/workflows/ci.yml`, Node 22 on ubuntu + macos) runs exactly:
 `npm ci` → `npm run typecheck` → `npm run build` → `npm test`.
 
 When adding a new test file, add its compiled `dist-test/...` path to the `test`
