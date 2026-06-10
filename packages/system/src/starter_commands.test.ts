@@ -9,9 +9,9 @@ import { StarterSystemApplication } from "./application.js";
 import { DEFAULT_STARTER_SYSTEM_CONFIG } from "./config.js";
 import { executeStarterSlashCommand } from "./starter_commands.js";
 
-test("executeStarterSlashCommand renders help with hints", () => {
+test("executeStarterSlashCommand renders help with hints", async () => {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  const output = executeStarterSlashCommand(app, "/help");
+  const output = await executeStarterSlashCommand(app, "/help");
   assert.ok(output);
   assert.match(output, /\/questions \[ask <task-id> <text>\|pending\|answer <question-id> <text>\]/);
   assert.match(output, /\/tasks \[create prompt <text>\|list\|show <task-id>\|stop <task-id>\]/);
@@ -21,36 +21,36 @@ test("executeStarterSlashCommand renders help with hints", () => {
   app.shutdown();
 });
 
-test("executeStarterSlashCommand renders doctor output", () => {
+test("executeStarterSlashCommand renders doctor output", async () => {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  const output = executeStarterSlashCommand(app, "/doctor");
+  const output = await executeStarterSlashCommand(app, "/doctor");
   assert.ok(output);
   assert.match(output, /emberforge-ts doctor/);
   app.shutdown();
 });
 
-test("executeStarterSlashCommand renders doctor status output", () => {
+test("executeStarterSlashCommand renders doctor status output", async () => {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  const output = executeStarterSlashCommand(app, "/doctor status");
+  const output = await executeStarterSlashCommand(app, "/doctor status");
   assert.ok(output);
   assert.match(output, /emberforge-ts doctor status/);
   assert.match(output, /last_route: none/);
   app.shutdown();
 });
 
-test("executeStarterSlashCommand returns null for unsupported slash commands", () => {
+test("executeStarterSlashCommand returns null for unsupported slash commands", async () => {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  assert.equal(executeStarterSlashCommand(app, "/unknown"), null);
+  assert.equal(await executeStarterSlashCommand(app, "/unknown"), null);
   app.shutdown();
 });
 
-test("executeStarterSlashCommand supports model list and payload-bearing review/pr placeholders", () => {
+test("executeStarterSlashCommand supports model list and payload-bearing review/pr placeholders", async () => {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  assert.match(executeStarterSlashCommand(app, "/model list") ?? "", /model list:/);
-  assert.match(executeStarterSlashCommand(app, "/review workspace") ?? "", /\[command\] review/);
-  assert.match(executeStarterSlashCommand(app, "/review workspace") ?? "", /scope: workspace/);
-  assert.match(executeStarterSlashCommand(app, "/pr release notes") ?? "", /\[command\] pr/);
-  assert.match(executeStarterSlashCommand(app, "/pr release notes") ?? "", /context: release notes/);
+  assert.match(await executeStarterSlashCommand(app, "/model list") ?? "", /\[command\] model list/);
+  assert.match(await executeStarterSlashCommand(app, "/review workspace") ?? "", /\[command\] review/);
+  assert.match(await executeStarterSlashCommand(app, "/review workspace") ?? "", /scope: workspace/);
+  assert.match(await executeStarterSlashCommand(app, "/pr release notes") ?? "", /\[command\] pr/);
+  assert.match(await executeStarterSlashCommand(app, "/pr release notes") ?? "", /context: release notes/);
   app.shutdown();
 });
 
@@ -58,15 +58,15 @@ test("executeStarterSlashCommand /model switches the model used by the next runt
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
 
   // No-argument /model inspects the current active model.
-  const inspect = executeStarterSlashCommand(app, "/model") ?? "";
+  const inspect = await executeStarterSlashCommand(app, "/model") ?? "";
   assert.match(inspect, /\[command\] model: qwen3:8b/);
 
   // /model <name> reports the switch...
-  const switched = executeStarterSlashCommand(app, "/model llama3:8b") ?? "";
+  const switched = await executeStarterSlashCommand(app, "/model llama3:8b") ?? "";
   assert.match(switched, /\[command\] model: switched to llama3:8b/);
 
   // ...and inspection now reflects the new model.
-  assert.match(executeStarterSlashCommand(app, "/model") ?? "", /\[command\] model: llama3:8b/);
+  assert.match(await executeStarterSlashCommand(app, "/model") ?? "", /\[command\] model: llama3:8b/);
 
   // The very next normal runtime turn must use the newly selected model.
   const turnOutput = await app.runtime.runTurn("hello");
@@ -76,51 +76,51 @@ test("executeStarterSlashCommand /model switches the model used by the next runt
   app.shutdown();
 });
 
-test("executeStarterSlashCommand supports the starter buddy lifecycle", () => {
+test("executeStarterSlashCommand supports the starter buddy lifecycle", async () => {
   const originalStatePath = process.env.EMBER_BUDDY_STATE_PATH;
   process.env.EMBER_BUDDY_STATE_PATH = join(mkdtempSync(join(tmpdir(), "ember-buddy-ts-")), "buddy-state.json");
 
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
 
-  assert.match(executeStarterSlashCommand(app, "/buddy") ?? "", /status: no companion/);
+  assert.match(await executeStarterSlashCommand(app, "/buddy") ?? "", /status: no companion/);
 
-  const hatchOutput = executeStarterSlashCommand(app, "/buddy hatch") ?? "";
+  const hatchOutput = await executeStarterSlashCommand(app, "/buddy hatch") ?? "";
   assert.match(hatchOutput, /\[command\] buddy hatch/);
   assert.match(hatchOutput, /name: Waddles/);
   assert.match(hatchOutput, /species: Duck/);
 
-  const secondHatchOutput = executeStarterSlashCommand(app, "/buddy hatch") ?? "";
+  const secondHatchOutput = await executeStarterSlashCommand(app, "/buddy hatch") ?? "";
   assert.match(secondHatchOutput, /status: companion already active/);
   assert.match(secondHatchOutput, /\/buddy rehatch/);
 
-  const buddyOutput = executeStarterSlashCommand(app, "/buddy") ?? "";
+  const buddyOutput = await executeStarterSlashCommand(app, "/buddy") ?? "";
   assert.match(buddyOutput, /commands: \/buddy pet/);
 
-  const muteOutput = executeStarterSlashCommand(app, "/buddy mute") ?? "";
+  const muteOutput = await executeStarterSlashCommand(app, "/buddy mute") ?? "";
   assert.match(muteOutput, /status: muted/);
   assert.match(muteOutput, /hide quietly/);
 
-  const secondMuteOutput = executeStarterSlashCommand(app, "/buddy mute") ?? "";
+  const secondMuteOutput = await executeStarterSlashCommand(app, "/buddy mute") ?? "";
   assert.match(secondMuteOutput, /status: already muted/);
 
-  const petOutput = executeStarterSlashCommand(app, "/buddy pet") ?? "";
+  const petOutput = await executeStarterSlashCommand(app, "/buddy pet") ?? "";
   assert.match(petOutput, /reaction: Waddles purrs happily!/);
 
-  const unmuteOutput = executeStarterSlashCommand(app, "/buddy unmute") ?? "";
+  const unmuteOutput = await executeStarterSlashCommand(app, "/buddy unmute") ?? "";
   assert.match(unmuteOutput, /status: active/);
   assert.match(unmuteOutput, /welcome back/);
 
-  const secondUnmuteOutput = executeStarterSlashCommand(app, "/buddy unmute") ?? "";
+  const secondUnmuteOutput = await executeStarterSlashCommand(app, "/buddy unmute") ?? "";
   assert.match(secondUnmuteOutput, /status: already active/);
 
-  const rehatchOutput = executeStarterSlashCommand(app, "/buddy rehatch") ?? "";
+  const rehatchOutput = await executeStarterSlashCommand(app, "/buddy rehatch") ?? "";
   assert.match(rehatchOutput, /name: Goosberry/);
   assert.match(rehatchOutput, /species: Goose/);
 
   app.shutdown();
 
   const restored = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  const restoredBuddy = executeStarterSlashCommand(restored, "/buddy") ?? "";
+  const restoredBuddy = await executeStarterSlashCommand(restored, "/buddy") ?? "";
   assert.match(restoredBuddy, /name: Goosberry/);
   assert.match(restoredBuddy, /species: Goose/);
   restored.shutdown();
@@ -132,33 +132,33 @@ test("executeStarterSlashCommand supports the starter buddy lifecycle", () => {
   }
 });
 
-test("executeStarterSlashCommand supports persisted task-question resume flow", () => {
+test("executeStarterSlashCommand supports persisted task-question resume flow", async () => {
   const originalStatePath = process.env.EMBER_TASK_STATE_PATH;
   process.env.EMBER_TASK_STATE_PATH = join(mkdtempSync(join(tmpdir(), "ember-task-ts-")), "task-state.json");
 
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
 
-  const createOutput = executeStarterSlashCommand(app, "/tasks create prompt investigate auth flow") ?? "";
+  const createOutput = await executeStarterSlashCommand(app, "/tasks create prompt investigate auth flow") ?? "";
   assert.match(createOutput, /task_id: task-1/);
   assert.match(createOutput, /status: in_progress/);
 
-  const askOutput = executeStarterSlashCommand(app, "/questions ask task-1 Which tenant should we target first\\?") ?? "";
+  const askOutput = await executeStarterSlashCommand(app, "/questions ask task-1 Which tenant should we target first\\?") ?? "";
   assert.match(askOutput, /question_id: question-1/);
   assert.match(askOutput, /status: waiting_for_user/);
 
-  const pendingOutput = executeStarterSlashCommand(app, "/questions pending") ?? "";
+  const pendingOutput = await executeStarterSlashCommand(app, "/questions pending") ?? "";
   assert.match(pendingOutput, /question-1 -> task-1/);
 
   app.shutdown();
 
   const restarted = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG);
-  const showWaiting = executeStarterSlashCommand(restarted, "/tasks show task-1") ?? "";
+  const showWaiting = await executeStarterSlashCommand(restarted, "/tasks show task-1") ?? "";
   assert.match(showWaiting, /status: waiting_for_user/);
 
-  const answerOutput = executeStarterSlashCommand(restarted, "/questions answer question-1 Start with the billing tenant") ?? "";
+  const answerOutput = await executeStarterSlashCommand(restarted, "/questions answer question-1 Start with the billing tenant") ?? "";
   assert.match(answerOutput, /task_status: completed/);
 
-  const showCompleted = executeStarterSlashCommand(restarted, "/tasks show task-1") ?? "";
+  const showCompleted = await executeStarterSlashCommand(restarted, "/tasks show task-1") ?? "";
   assert.match(showCompleted, /status: completed/);
   assert.match(showCompleted, /answer: Start with the billing tenant/);
 

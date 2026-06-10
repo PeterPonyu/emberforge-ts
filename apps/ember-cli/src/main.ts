@@ -92,6 +92,7 @@ const remainingArgs = stripConsumedCliFlags(process.argv.slice(2));
 const doctorArgs = remainingArgs;
 const doctorMode = doctorArgs[0] === "doctor";
 const promptMode = doctorArgs[0] === "prompt";
+const modelsMode = doctorArgs[0] === "models";
 
 if (promptMode) {
   // Direct loop: drive ONE non-interactive agent turn through the existing
@@ -136,13 +137,32 @@ if (promptMode) {
     app.shutdown();
     process.exit(1);
   }
+} else if (modelsMode) {
+  // `ember models`: list the real local models from Ollama's /api/tags (plus
+  // cloud shortcuts + routing shortcuts), mirroring the Rust reference's
+  // `CliAction::Models`. Reuses the same `/model list` path the REPL uses.
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
+  try {
+    console.log(await executeStarterSlashCommand(app, "/model list"));
+  } catch (err: unknown) {
+    console.error(`[ember] models: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
+  }
+  app.shutdown();
 } else if (doctorMode) {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const doctorSubmode = doctorArgs[1]?.trim();
-  if (doctorSubmode === "status") {
-    console.log(executeStarterSlashCommand(app, "/doctor status"));
-  } else {
-    console.log(buildDoctorReport(app.report()));
+  try {
+    if (doctorSubmode === "status") {
+      console.log(await executeStarterSlashCommand(app, "/doctor status"));
+    } else {
+      console.log(buildDoctorReport(app.report()));
+    }
+  } catch (err: unknown) {
+    console.error(`[ember] doctor: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
   }
   app.shutdown();
 } else if (useRepl) {
@@ -224,7 +244,7 @@ if (promptMode) {
         return handleResumeCommand(line.slice("/resume".length));
       }
       await persist({ role: "user", content: line, timestamp: new Date().toISOString() });
-      const slashOutput = executeStarterSlashCommand(app, line);
+      const slashOutput = await executeStarterSlashCommand(app, line);
       if (slashOutput !== null) {
         await persist({ role: "assistant", content: slashOutput, timestamp: new Date().toISOString() });
         return slashOutput;
@@ -246,7 +266,7 @@ if (promptMode) {
   const rawCommand = remainingArgs.join(" ").trim();
   if (rawCommand.startsWith("/")) {
     const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
-    const output = executeStarterSlashCommand(app, rawCommand);
+    const output = await executeStarterSlashCommand(app, rawCommand);
     if (output !== null) {
       console.log(output);
       app.shutdown();

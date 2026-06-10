@@ -7,7 +7,155 @@ import type {
   ToolCall,
 } from "./types.js";
 import type { Provider } from "./provider.js";
-import { buildSystemPrompt } from "./system_prompt.js";
+import { buildAgentSystemPrompt } from "./system_prompt.js";
+
+/**
+ * Env flag that reveals separated thinking/reasoning content. Named constant
+ * (not a buried literal), default OFF — mirrors the Rust reference where the
+ * `thinking_visible` toggle is off unless the user opts in. When truthy, the
+ * provider writes the model's reasoning to stderr; stdout always stays the final
+ * answer only.
+ */
+export const EMBER_SHOW_THINKING_ENV = "EMBER_SHOW_THINKING";
+
+/**
+ * Model families that emit a separate reasoning channel, mirroring the Rust
+ * reference's `THINKING_FAMILIES` (`crates/runtime/src/model_profiles.rs:65`).
+ * For these we request Ollama's structured `think` mode so reasoning arrives in
+ * `message.thinking` instead of being inlined into the answer.
+ */
+export const THINKING_FAMILIES = ["qwen3", "deepseek-r1"] as const;
+
+/** Whether `model` is a known thinking model (case-insensitive family prefix). */
+export function isThinkingModel(model: string): boolean {
+  const family = model.toLowerCase();
+  return THINKING_FAMILIES.some((prefix) => family.startsWith(prefix));
+}
+
+/** Whether reasoning should be surfaced, per {@link EMBER_SHOW_THINKING_ENV}. */
+export function shouldShowThinking(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const raw = env[EMBER_SHOW_THINKING_ENV];
+  if (raw === undefined) return false;
+  const normalized = raw.trim().toLowerCase();
+  return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "off";
+}
+
+const THINK_OPEN = "<think>";
+const THINK_CLOSE = "</think>";
+
+/**
+ * Longest suffix of `s` that is a strict prefix of `marker`. Lets the streaming
+ * separator hold back a partial `</think>` that may be split across NDJSON
+ * chunks instead of misclassifying it.
+ */
+function partialMarkerSuffix(s: string, marker: string): number {
+  const max = Math.min(s.length, marker.length - 1);
+  for (let k = max; k > 0; k -= 1) {
+    if (s.slice(s.length - k) === marker.slice(0, k)) return k;
+  }
+  return 0;
+}
+
+/**
+ * Streaming separator that splits a model's output into the final ANSWER and its
+ * THINKING/reasoning, mirroring the Rust reference's separate-channel handling.
+ * It does two things, both incremental so it works mid-stream:
+ *
+ * - Accumulates structured `message.thinking` deltas (preferred channel) via
+ *   {@link addStructuredThinking} — these never reach the answer.
+ * - Strips a single well-formed LEADING `<think>...</think>` block from the
+ *   content channel (the inline fallback some models use). It only treats a
+ *   block as thinking when content *starts* with `<think>`; legitimate later
+ *   `<think>` text is left untouched (no regex-mangling).
+ *
+ * `pushContent` returns only the answer text safe to emit so far.
+ */
+export class ThinkStreamSeparator {
+  private state: "detecting" | "thinking" | "answer" = "detecting";
+  private pending = "";
+  private thinking = "";
+
+  /** Feed a content delta; returns the answer text to emit now (may be empty). */
+  pushContent(delta: string): string {
+    this.pending += delta;
+    let emit = "";
+    for (;;) {
+      if (this.state === "detecting") {
+        const lstripped = this.pending.replace(/^\s+/, "");
+        if (lstripped === "") return emit; // only whitespace so far — keep buffering
+        if (lstripped.startsWith(THINK_OPEN)) {
+          this.pending = lstripped.slice(THINK_OPEN.length);
+          this.state = "thinking";
+          continue;
+        }
+        if (THINK_OPEN.startsWith(lstripped)) return emit; // could still become <think>
+        // Not a leading think block: flush everything as answer.
+        emit += this.pending;
+        this.pending = "";
+        this.state = "answer";
+        return emit;
+      }
+      if (this.state === "thinking") {
+        const idx = this.pending.indexOf(THINK_CLOSE);
+        if (idx === -1) {
+          // Hold back a possible partial close; the rest is reasoning.
+          const keep = partialMarkerSuffix(this.pending, THINK_CLOSE);
+          this.thinking += this.pending.slice(0, this.pending.length - keep);
+          this.pending = this.pending.slice(this.pending.length - keep);
+          return emit;
+        }
+        this.thinking += this.pending.slice(0, idx);
+        this.pending = this.pending.slice(idx + THINK_CLOSE.length);
+        if (this.pending.startsWith("\n")) this.pending = this.pending.slice(1);
+        this.state = "answer";
+        continue;
+      }
+      // answer state: everything flows straight through.
+      emit += this.pending;
+      this.pending = "";
+      return emit;
+    }
+  }
+
+  /** Accumulate a structured `message.thinking` delta (preferred channel). */
+  addStructuredThinking(delta: string): void {
+    this.thinking += delta;
+  }
+
+  /** Flush any buffered content at stream end; returns the final answer tail. */
+  finish(): string {
+    if (this.state === "thinking") {
+      // Unterminated leading think block → the remainder is all reasoning.
+      this.thinking += this.pending;
+      this.pending = "";
+      return "";
+    }
+    // detecting (never matched a full <think>) or answer → remainder is answer.
+    const out = this.pending;
+    this.pending = "";
+    this.state = "answer";
+    return out;
+  }
+
+  /** The accumulated reasoning content (answer-free). */
+  get thinkingText(): string {
+    return this.thinking;
+  }
+}
+
+/**
+ * Surfaces separated reasoning to stderr when {@link shouldShowThinking}. Kept
+ * provider-level so both the REPL and one-shot prompt paths benefit, and so
+ * stdout stays the answer only.
+ */
+function emitThinking(thinking: string, env: Record<string, string | undefined>): void {
+  const trimmed = thinking.trim();
+  if (trimmed !== "" && shouldShowThinking(env)) {
+    process.stderr.write(`[thinking] ${trimmed}\n`);
+  }
+}
 
 /**
  * Normalizes an Ollama base URL so both the root form (`http://HOST:PORT`) and
@@ -91,21 +239,27 @@ export class OllamaProvider implements Provider {
     // constructor or `OLLAMA_NUM_PREDICT`; otherwise a generous model-aware
     // default mirroring the Rust reference's `max_tokens_for_model`.
     const numPredict = this.numPredict ?? maxTokensForModel(effectiveModel);
+    const body: Record<string, unknown> = {
+      model: effectiveModel,
+      // Prepend the canonical agent system prompt WITH fresh dynamic context
+      // (git state, EMBER.md/CLAW.md instructions, settings) — parity with the
+      // Rust reference's `load_system_prompt` — ahead of the user message.
+      messages: [
+        { role: "system", content: buildAgentSystemPrompt() },
+        { role: "user", content: request.prompt },
+      ],
+      stream: true,
+      options: { num_predict: numPredict },
+    };
+    // Thinking models route reasoning into the structured `message.thinking`
+    // channel when asked; the separator still strips any inline <think> block.
+    if (isThinkingModel(effectiveModel)) {
+      body.think = true;
+    }
     const response = await fetch(`${this.baseURL}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: effectiveModel,
-        // Prepend the canonical agent system prompt (parity with the Rust
-        // reference) so the model is framed identically across all ports,
-        // ahead of the user message.
-        messages: [
-          { role: "system", content: buildSystemPrompt() },
-          { role: "user", content: request.prompt },
-        ],
-        stream: true,
-        options: { num_predict: numPredict },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok || !response.body) {
@@ -116,6 +270,13 @@ export class OllamaProvider implements Provider {
     const decoder = new TextDecoder();
     let buffer = "";
     let text = "";
+    const separator = new ThinkStreamSeparator();
+
+    const finalize = (): MessageResponse => {
+      text += separator.finish();
+      emitThinking(separator.thinkingText, process.env);
+      return { text };
+    };
 
     while (true) {
       const { value, done } = await reader.read();
@@ -126,13 +287,14 @@ export class OllamaProvider implements Provider {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
-        const obj = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
-        if (obj.message?.content) text += obj.message.content;
-        if (obj.done) return { text };
+        const obj = JSON.parse(line) as OllamaChatChunk;
+        if (obj.message?.thinking) separator.addStructuredThinking(obj.message.thinking);
+        if (obj.message?.content) text += separator.pushContent(obj.message.content);
+        if (obj.done) return finalize();
       }
     }
 
-    return { text };
+    return finalize();
   }
 
   /**
@@ -154,6 +316,12 @@ export class OllamaProvider implements Provider {
       stream: true,
       options: { num_predict: numPredict },
     };
+    // Thinking models route reasoning into the structured `message.thinking`
+    // channel; the separator also strips any inline leading <think> block so the
+    // streamed answer (and tool-call turns) never leak reasoning.
+    if (isThinkingModel(effectiveModel)) {
+      body.think = true;
+    }
     // Reuse the existing tool registry specs verbatim (no hardcoded schemas):
     // map each into Ollama's native function-tool shape.
     if (request.tools && request.tools.length > 0) {
@@ -182,6 +350,17 @@ export class OllamaProvider implements Provider {
     let buffer = "";
     let text = "";
     const toolCalls: ToolCall[] = [];
+    const separator = new ThinkStreamSeparator();
+
+    const finalize = (): ChatResponse => {
+      const tail = separator.finish();
+      if (tail) {
+        text += tail;
+        request.onText?.(tail);
+      }
+      emitThinking(separator.thinkingText, process.env);
+      return { text, toolCalls };
+    };
 
     while (true) {
       const { value, done } = await reader.read();
@@ -193,10 +372,16 @@ export class OllamaProvider implements Provider {
         buffer = buffer.slice(nl + 1);
         if (!line) continue;
         const obj = JSON.parse(line) as OllamaChatChunk;
+        if (obj.message?.thinking) separator.addStructuredThinking(obj.message.thinking);
         const delta = obj.message?.content;
         if (delta) {
-          text += delta;
-          request.onText?.(delta);
+          // Stream only the ANSWER portion; reasoning is held back by the
+          // separator so it never reaches stdout.
+          const answer = separator.pushContent(delta);
+          if (answer) {
+            text += answer;
+            request.onText?.(answer);
+          }
         }
         // Tool calls arrive in the aggregated message (one chunk before/at
         // `done`); collect them from any chunk that carries them.
@@ -206,10 +391,11 @@ export class OllamaProvider implements Provider {
             toolCalls.push({ name, arguments: normalizeToolArguments(raw.function?.arguments) });
           }
         }
+        if (obj.done) return finalize();
       }
     }
 
-    return { text, toolCalls };
+    return finalize();
   }
 }
 
@@ -217,6 +403,8 @@ export class OllamaProvider implements Provider {
 interface OllamaChatChunk {
   message?: {
     content?: string;
+    /** Structured reasoning channel emitted by thinking models in `think` mode. */
+    thinking?: string;
     tool_calls?: Array<{
       function?: { name?: string; arguments?: unknown };
     }>;

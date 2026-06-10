@@ -88,8 +88,8 @@ as the REPL, so a local turn requires a reachable Ollama (or hosted credentials)
 - **Slash commands**: `/help`, `/status`, `/doctor`, `/model`, `/questions`, `/tasks`, `/buddy`, `/compact`, `/review`, `/commit`, `/pr`, and more
 - **Tools**: bash, file ops, search, web, notebooks, agents, skills
 - **Sessions**: Save, resume, export conversations
-- **Plugin system**: Includes plugin metadata and registry scaffolding
-- **MCP integration** *(planned)*: Model Context Protocol support is not yet implemented in this port
+- **Plugin system**: Plugin metadata and registry scaffolding; runtime hook dispatch is planned
+- **MCP integration**: Model Context Protocol stdio client — connects to external tool servers at REPL startup via `initMcp()`; offline-safe (no-op when unconfigured)
 - **Telemetry**: Session tracing and usage analytics
 - **Prompt caching**: Request fingerprinting with TTL
 
@@ -163,6 +163,8 @@ Add it by hand for now — there is no scaffolding command yet.
 > config/`.gitignore` entries is not yet implemented. The currently handled
 > slash commands are `/help`, `/status`, `/doctor`, `/model`, `/questions`,
 > `/tasks`, `/buddy`, `/compact`, `/review`, `/commit`, and `/pr`.
+> Note: `/commit` and `/pr` are **placeholder** implementations — they return a
+> summary of current state but do not perform actual git operations.
 
 ## Development
 
@@ -179,6 +181,22 @@ npm run typecheck
 # Run
 npm start
 ```
+
+## Parity Status vs Rust Reference
+
+The TypeScript port implements the core loop but does not yet cover every
+feature of the Rust reference (`emberforge`). Known gaps as of this writing:
+
+| Feature | Rust reference | TypeScript port |
+| --- | --- | --- |
+| `--permission-mode` flag | `read-only` / `workspace-write` / `danger-full-access` | Not implemented |
+| `--allowed-tools` flag | Restricts tool set per turn | Not implemented |
+| `ndjson` output format | `--output-format ndjson` streams events | Not implemented (`text` and `json` only) |
+| `doctor full` | Full diagnostics with connectivity probes | Not implemented (`quick`/`status` only) |
+| `doctor reset` | Resets cached diagnostics state | Not implemented |
+
+Contributions that close these gaps are welcome; see AGENTS.md for build and
+test instructions.
 
 ## License
 
