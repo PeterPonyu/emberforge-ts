@@ -6,7 +6,7 @@ import { PluginRegistry } from "../../plugins/src/index.js";
 import { ConversationRuntime } from "../../runtime/src/index.js";
 import { McpClient, type McpServerConfig } from "../../mcp/src/index.js";
 import { Server } from "../../server/src/index.js";
-import { ConsoleTelemetrySink } from "../../telemetry/src/index.js";
+import { ConsoleTelemetrySink, type TelemetrySink } from "../../telemetry/src/index.js";
 import { PermissionMode, RealToolExecutor, ToolDispatcher, ToolRegistry } from "../../tools/src/index.js";
 import { StarterBuddyState } from "./buddy.js";
 import { SystemDispatcher } from "./dispatch.js";
@@ -20,7 +20,7 @@ import { TurnEngine } from "./turn.js";
 export class StarterSystemApplication {
   readonly provider: Provider;
   readonly toolExecutor = new RealToolExecutor();
-  readonly telemetry = new ConsoleTelemetrySink();
+  readonly telemetry: TelemetrySink;
   readonly runtime: ConversationRuntime;
   readonly buddy = new StarterBuddyState();
   readonly taskQuestionState = new TaskQuestionStateStore();
@@ -47,10 +47,15 @@ export class StarterSystemApplication {
     readonly config: StarterSystemConfig = DEFAULT_STARTER_SYSTEM_CONFIG,
     provider?: Provider,
     mcpServers: McpServerConfig[] = [],
+    telemetry?: TelemetrySink,
   ) {
+    this.telemetry = telemetry ?? new ConsoleTelemetrySink();
     this.provider = provider ?? new MockProvider();
     this.mcp = new McpClient(mcpServers);
-    this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry);
+    this.runtime = new ConversationRuntime(this.provider, this.toolExecutor, this.telemetry, {
+      toolDispatcher: this.toolDispatcher,
+      toolRegistry: this.tools,
+    });
     this.controlSequence = new ControlSequenceEngine(
       this.runtime,
       this.commands,

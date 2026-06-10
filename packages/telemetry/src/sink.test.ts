@@ -4,11 +4,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  ConsoleTelemetrySink,
   JsonlTelemetrySink,
   MemoryTelemetrySink,
   SessionTracer,
 } from "./sink.js";
 import type { TelemetryRecord } from "./types.js";
+
+test("ConsoleTelemetrySink routes lines to the injected writer", () => {
+  const lines: string[] = [];
+  const sink = new ConsoleTelemetrySink((line) => lines.push(line));
+  sink.record({ name: "turn_completed", details: "route=direct" });
+  assert.deepEqual(lines, ["[telemetry] turn_completed: route=direct"]);
+});
 
 test("JsonlTelemetrySink creates parent dirs and appends JSONL records", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ember-telemetry-test-"));

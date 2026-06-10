@@ -10,8 +10,8 @@ export const DEFAULT_COMMANDS: CommandSpec[] = [
   { name: "buddy", description: "Manage the translated companion buddy", category: "core", argumentHint: "[hatch|rehatch|pet|mute|unmute]" },
   { name: "compact", description: "Summarize the current conversation state", category: "core" },
   { name: "review", description: "Review the current workspace changes", category: "git", argumentHint: "[scope]" },
-  { name: "commit", description: "Prepare a translated commit summary", category: "git" },
-  { name: "pr", description: "Prepare a translated pull request summary", category: "git", argumentHint: "[context]" },
+  { name: "commit", description: "Prepare a commit summary (placeholder — no git operations performed)", category: "git" },
+  { name: "pr", description: "Prepare a pull request summary (placeholder — no git operations performed)", category: "git", argumentHint: "[context]" },
 ];
 
 export class CommandRegistry {

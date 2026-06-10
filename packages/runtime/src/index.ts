@@ -1,5 +1,5 @@
-export { ConversationRuntime } from "./conversation.js";
-export type { TurnSummary } from "./conversation.js";
+export { ConversationRuntime, DEFAULT_MAX_ITERATIONS, resolveMaxIterations } from "./conversation.js";
+export type { TurnSummary, ConversationRuntimeOptions } from "./conversation.js";
 export { Session } from "./session.js";
 export type { SessionTurn } from "./session.js";
 export { SessionStore, newSessionId, defaultSessionDir } from "./session_store.js";

@@ -2,6 +2,8 @@ import { resolveProvider } from "../../../packages/api/src/index.js";
 import { buildDoctorReport, DEFAULT_STARTER_SYSTEM_CONFIG, executeStarterSlashCommand, StarterSystemApplication } from "../../../packages/system/src/index.js";
 import { Repl, SessionStore, newSessionId } from "../../../packages/runtime/src/index.js";
 import type { ConversationMessage, SessionSummary } from "../../../packages/runtime/src/index.js";
+import { ConsoleTelemetrySink } from "../../../packages/telemetry/src/index.js";
+import { parsePromptArgs, runPromptTurn } from "./prompt.js";
 
 /**
  * Resolves the `--resume` flag. `--resume <id>` (or `--resume=<id>`) targets a
@@ -89,14 +91,78 @@ if (cliModel) {
 const remainingArgs = stripConsumedCliFlags(process.argv.slice(2));
 const doctorArgs = remainingArgs;
 const doctorMode = doctorArgs[0] === "doctor";
+const promptMode = doctorArgs[0] === "prompt";
+const modelsMode = doctorArgs[0] === "models";
 
-if (doctorMode) {
+if (promptMode) {
+  // Direct loop: drive ONE non-interactive agent turn through the existing
+  // runtime and exit, mirroring the Rust reference's `ember prompt "<text>"`.
+  let parsed;
+  try {
+    parsed = parsePromptArgs(doctorArgs.slice(1));
+  } catch (err: unknown) {
+    console.error(`[ember] prompt: ${(err as Error).message}`);
+    process.exit(2);
+  }
+  if (!parsed.prompt) {
+    console.error('[ember] prompt: requires a prompt string, e.g. prompt "hello"');
+    process.exit(2);
+  }
+  // One-shot prompt mode: stdout must carry ONLY the model answer, so route
+  // telemetry/diagnostics to stderr via the sink abstraction (no string-stripping).
+  const promptTelemetry = new ConsoleTelemetrySink((line) => process.stderr.write(`${line}\n`));
+  const app = new StarterSystemApplication(
+    DEFAULT_STARTER_SYSTEM_CONFIG,
+    resolveProvider(),
+    [],
+    promptTelemetry,
+  );
+  try {
+    // Stream assistant text deltas to stdout as they arrive (text mode only).
+    // JSON mode needs the whole structured record, so it stays buffered.
+    if (parsed.output === "text") {
+      app.runtime.onText = (delta) => process.stdout.write(delta);
+    }
+    const rendered = await runPromptTurn(app, parsed.prompt, parsed.output);
+    if (parsed.output === "json") {
+      console.log(rendered);
+    } else {
+      // Content already streamed via onText; terminate the line.
+      process.stdout.write("\n");
+    }
+    app.shutdown();
+    process.exit(0);
+  } catch (err: unknown) {
+    console.error(`[ember] prompt failed: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
+  }
+} else if (modelsMode) {
+  // `ember models`: list the real local models from Ollama's /api/tags (plus
+  // cloud shortcuts + routing shortcuts), mirroring the Rust reference's
+  // `CliAction::Models`. Reuses the same `/model list` path the REPL uses.
+  const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
+  try {
+    console.log(await executeStarterSlashCommand(app, "/model list"));
+  } catch (err: unknown) {
+    console.error(`[ember] models: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
+  }
+  app.shutdown();
+} else if (doctorMode) {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const doctorSubmode = doctorArgs[1]?.trim();
-  if (doctorSubmode === "status") {
-    console.log(executeStarterSlashCommand(app, "/doctor status"));
-  } else {
-    console.log(buildDoctorReport(app.report()));
+  try {
+    if (doctorSubmode === "status") {
+      console.log(await executeStarterSlashCommand(app, "/doctor status"));
+    } else {
+      console.log(buildDoctorReport(app.report()));
+    }
+  } catch (err: unknown) {
+    console.error(`[ember] doctor: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
   }
   app.shutdown();
 } else if (useRepl) {
@@ -168,6 +234,9 @@ if (doctorMode) {
     return `[ember] resumed session ${sessionId} (${loaded.messages.length} messages)`;
   };
 
+  // Stream assistant text deltas to stdout live during agentic turns.
+  app.runtime.onText = (delta) => process.stdout.write(delta);
+
   const repl = new Repl({
     prompt: "ember> ",
     onInput: async (line: string): Promise<string> => {
@@ -175,7 +244,7 @@ if (doctorMode) {
         return handleResumeCommand(line.slice("/resume".length));
       }
       await persist({ role: "user", content: line, timestamp: new Date().toISOString() });
-      const slashOutput = executeStarterSlashCommand(app, line);
+      const slashOutput = await executeStarterSlashCommand(app, line);
       if (slashOutput !== null) {
         await persist({ role: "assistant", content: slashOutput, timestamp: new Date().toISOString() });
         return slashOutput;
@@ -183,7 +252,9 @@ if (doctorMode) {
 
       const record = await app.controlSequence.handle(line);
       await persist({ role: "assistant", content: record.output, timestamp: new Date().toISOString() });
-      return record.output;
+      // The answer already streamed to stdout via onText; return empty so the
+      // REPL only appends the terminating newline (no duplicate print).
+      return "";
     },
     onExit: (): void => {
       app.shutdown();
@@ -195,7 +266,7 @@ if (doctorMode) {
   const rawCommand = remainingArgs.join(" ").trim();
   if (rawCommand.startsWith("/")) {
     const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
-    const output = executeStarterSlashCommand(app, rawCommand);
+    const output = await executeStarterSlashCommand(app, rawCommand);
     if (output !== null) {
       console.log(output);
       app.shutdown();

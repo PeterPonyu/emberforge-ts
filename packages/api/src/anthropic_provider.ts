@@ -2,6 +2,7 @@ import type { MessageRequest, MessageResponse } from "./types.js";
 import type { Provider } from "./provider.js";
 import { applyAnthropicAuth, resolveAnthropicAuth, type AnthropicSettings, type EnvMap } from "./auth.js";
 import { globalFetch, type FetchLike } from "./transport.js";
+import { buildSystemPrompt } from "./system_prompt.js";
 
 export const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -71,6 +72,10 @@ export class AnthropicProvider implements Provider {
     return JSON.stringify({
       model: request.model,
       max_tokens: this.maxTokens,
+      // The Anthropic Messages API takes the system prompt as a top-level
+      // `system` field (not a `system`-role message). Send the canonical agent
+      // prompt here for parity with the Rust reference / other providers.
+      system: buildSystemPrompt(),
       messages: [{ role: "user", content: request.prompt }],
       stream: false,
     });
