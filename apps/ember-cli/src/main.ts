@@ -142,15 +142,27 @@ if (promptMode) {
   // cloud shortcuts + routing shortcuts), mirroring the Rust reference's
   // `CliAction::Models`. Reuses the same `/model list` path the REPL uses.
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
-  console.log(await executeStarterSlashCommand(app, "/model list"));
+  try {
+    console.log(await executeStarterSlashCommand(app, "/model list"));
+  } catch (err: unknown) {
+    console.error(`[ember] models: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
+  }
   app.shutdown();
 } else if (doctorMode) {
   const app = new StarterSystemApplication(DEFAULT_STARTER_SYSTEM_CONFIG, resolveProvider());
   const doctorSubmode = doctorArgs[1]?.trim();
-  if (doctorSubmode === "status") {
-    console.log(await executeStarterSlashCommand(app, "/doctor status"));
-  } else {
-    console.log(buildDoctorReport(app.report()));
+  try {
+    if (doctorSubmode === "status") {
+      console.log(await executeStarterSlashCommand(app, "/doctor status"));
+    } else {
+      console.log(buildDoctorReport(app.report()));
+    }
+  } catch (err: unknown) {
+    console.error(`[ember] doctor: ${(err as Error).message}`);
+    app.shutdown();
+    process.exit(1);
   }
   app.shutdown();
 } else if (useRepl) {
