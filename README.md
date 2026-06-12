@@ -136,9 +136,16 @@ config directory `~/.emberforge/` (and `.emberforge/sessions` in the current
 project for session transcripts). Set `EMBER_CONFIG_HOME` to relocate the
 config directory.
 
-> **Note:** There is no settings-file loader yet. A layered config-file
-> precedence chain (project/user JSON settings) is **planned** but not
-> implemented — configure the tool via the environment variables below.
+Directory names are split by role: `.emberforge/` is the runtime state/config
+home, while `.ember/` paths in prompt-context code are project instruction or
+settings context inputs rather than the state directory. Runtime configuration
+uses the public `EMBER_*` environment variables below; `EMBERFORGE_*` variables
+are limited to compatibility/reference fixture paths.
+
+> **Note:** There is no runtime settings-file loader yet. A layered config-file
+> precedence chain (project/user JSON settings that alter runtime behavior) is
+> **planned** but not implemented — configure the tool via the environment
+> variables below.
 
 Environment variables:
 
