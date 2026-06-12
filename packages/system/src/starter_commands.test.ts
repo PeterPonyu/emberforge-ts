@@ -88,6 +88,8 @@ test("executeStarterSlashCommand supports the starter buddy lifecycle", async ()
   assert.match(hatchOutput, /\[command\] buddy hatch/);
   assert.match(hatchOutput, /name: Waddles/);
   assert.match(hatchOutput, /species: Duck/);
+  assert.match(hatchOutput, /note: starter companion/);
+  assert.doesNotMatch(hatchOutput, /claude-code-src/);
 
   const secondHatchOutput = await executeStarterSlashCommand(app, "/buddy hatch") ?? "";
   assert.match(secondHatchOutput, /status: companion already active/);
